@@ -1,0 +1,37 @@
+Total test samples: 10000
+Total misclassified: 61
+Accuracy: 99.39%
+
+Top-10 confusion pairs (true -> pred):
+  4 -> 9: 7
+  7 -> 2: 6
+  4 -> 8: 5
+  7 -> 1: 4
+  6 -> 1: 4
+  9 -> 4: 3
+  5 -> 3: 3
+  9 -> 8: 2
+  8 -> 2: 2
+  6 -> 5: 2
+
+Top-20 most confident errors:
+  idx=3808, true=7, pred=8, conf=0.9885
+  idx=9729, true=5, pred=6, conf=0.9878
+  idx=6576, true=7, pred=1, conf=0.9825
+  idx=2130, true=4, pred=9, conf=0.9822
+  idx=1226, true=7, pred=2, conf=0.9662
+  idx=3073, true=1, pred=2, conf=0.9619
+  idx=9792, true=4, pred=9, conf=0.9606
+  idx=9009, true=7, pred=2, conf=0.9462
+  idx=2462, true=2, pred=0, conf=0.9438
+  idx=4740, true=3, pred=5, conf=0.9386
+  idx=7434, true=4, pred=8, conf=0.9333
+  idx=9698, true=6, pred=1, conf=0.9292
+  idx=1260, true=7, pred=1, conf=0.9199
+  idx=2035, true=5, pred=3, conf=0.9106
+  idx=1112, true=4, pred=6, conf=0.9037
+  idx=8094, true=2, pred=8, conf=0.8999
+  idx=1901, true=9, pred=4, conf=0.8982
+  idx=4699, true=6, pred=1, conf=0.8834
+  idx=1232, true=9, pred=4, conf=0.8793
+  idx=3762, true=6, pred=8, conf=0.8764

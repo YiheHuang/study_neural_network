@@ -1,0 +1,16 @@
+seed,model,best_test_accuracy_percent,returncode,script,ckpt_tag
+42,optimized_cnn,92.88,0,main.py,s42_opt
+42,fcnn,89.02,0,main_fcnn.py,s42_fcnn
+42,original_cnn,92.34,0,main_originalcnn.py,s42_orig
+123,optimized_cnn,92.94,0,main.py,s123_opt
+123,fcnn,88.5,0,main_fcnn.py,s123_fcnn
+123,original_cnn,92.21,0,main_originalcnn.py,s123_orig
+456,optimized_cnn,92.85,0,main.py,s456_opt
+456,fcnn,88.65,0,main_fcnn.py,s456_fcnn
+456,original_cnn,92.1,0,main_originalcnn.py,s456_orig
+1024,optimized_cnn,92.93,0,main.py,s1024_opt
+1024,fcnn,88.94,0,main_fcnn.py,s1024_fcnn
+1024,original_cnn,92.03,0,main_originalcnn.py,s1024_orig
+2025,optimized_cnn,92.99,0,main.py,s2025_opt
+2025,fcnn,88.97,0,main_fcnn.py,s2025_fcnn
+2025,original_cnn,91.99,0,main_originalcnn.py,s2025_orig

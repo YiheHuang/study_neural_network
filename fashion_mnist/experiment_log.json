@@ -1,0 +1,248 @@
+{
+  "seeds": [
+    42,
+    123,
+    456,
+    1024,
+    2025
+  ],
+  "summary_by_seed": {
+    "42": {
+      "fcnn": {
+        "script": "main_fcnn.py",
+        "seed": 42,
+        "best_test_accuracy_percent": 89.02,
+        "returncode": 0,
+        "ckpt_tag": "s42_fcnn"
+      },
+      "original_cnn": {
+        "script": "main_originalcnn.py",
+        "seed": 42,
+        "best_test_accuracy_percent": 92.34,
+        "returncode": 0,
+        "ckpt_tag": "s42_orig"
+      },
+      "optimized_cnn": {
+        "script": "main.py",
+        "seed": 42,
+        "best_test_accuracy_percent": 92.88,
+        "returncode": 0,
+        "ckpt_tag": "s42_opt"
+      }
+    },
+    "123": {
+      "fcnn": {
+        "script": "main_fcnn.py",
+        "seed": 123,
+        "best_test_accuracy_percent": 88.5,
+        "returncode": 0,
+        "ckpt_tag": "s123_fcnn"
+      },
+      "original_cnn": {
+        "script": "main_originalcnn.py",
+        "seed": 123,
+        "best_test_accuracy_percent": 92.21,
+        "returncode": 0,
+        "ckpt_tag": "s123_orig"
+      },
+      "optimized_cnn": {
+        "script": "main.py",
+        "seed": 123,
+        "best_test_accuracy_percent": 92.94,
+        "returncode": 0,
+        "ckpt_tag": "s123_opt"
+      }
+    },
+    "456": {
+      "fcnn": {
+        "script": "main_fcnn.py",
+        "seed": 456,
+        "best_test_accuracy_percent": 88.65,
+        "returncode": 0,
+        "ckpt_tag": "s456_fcnn"
+      },
+      "original_cnn": {
+        "script": "main_originalcnn.py",
+        "seed": 456,
+        "best_test_accuracy_percent": 92.1,
+        "returncode": 0,
+        "ckpt_tag": "s456_orig"
+      },
+      "optimized_cnn": {
+        "script": "main.py",
+        "seed": 456,
+        "best_test_accuracy_percent": 92.85,
+        "returncode": 0,
+        "ckpt_tag": "s456_opt"
+      }
+    },
+    "1024": {
+      "fcnn": {
+        "script": "main_fcnn.py",
+        "seed": 1024,
+        "best_test_accuracy_percent": 88.94,
+        "returncode": 0,
+        "ckpt_tag": "s1024_fcnn"
+      },
+      "original_cnn": {
+        "script": "main_originalcnn.py",
+        "seed": 1024,
+        "best_test_accuracy_percent": 92.03,
+        "returncode": 0,
+        "ckpt_tag": "s1024_orig"
+      },
+      "optimized_cnn": {
+        "script": "main.py",
+        "seed": 1024,
+        "best_test_accuracy_percent": 92.93,
+        "returncode": 0,
+        "ckpt_tag": "s1024_opt"
+      }
+    },
+    "2025": {
+      "fcnn": {
+        "script": "main_fcnn.py",
+        "seed": 2025,
+        "best_test_accuracy_percent": 88.97,
+        "returncode": 0,
+        "ckpt_tag": "s2025_fcnn"
+      },
+      "original_cnn": {
+        "script": "main_originalcnn.py",
+        "seed": 2025,
+        "best_test_accuracy_percent": 91.99,
+        "returncode": 0,
+        "ckpt_tag": "s2025_orig"
+      },
+      "optimized_cnn": {
+        "script": "main.py",
+        "seed": 2025,
+        "best_test_accuracy_percent": 92.99,
+        "returncode": 0,
+        "ckpt_tag": "s2025_opt"
+      }
+    }
+  },
+  "flat_rows": [
+    {
+      "seed": 42,
+      "model": "optimized_cnn",
+      "best_test_accuracy_percent": 92.88,
+      "returncode": 0,
+      "script": "main.py",
+      "ckpt_tag": "s42_opt"
+    },
+    {
+      "seed": 42,
+      "model": "fcnn",
+      "best_test_accuracy_percent": 89.02,
+      "returncode": 0,
+      "script": "main_fcnn.py",
+      "ckpt_tag": "s42_fcnn"
+    },
+    {
+      "seed": 42,
+      "model": "original_cnn",
+      "best_test_accuracy_percent": 92.34,
+      "returncode": 0,
+      "script": "main_originalcnn.py",
+      "ckpt_tag": "s42_orig"
+    },
+    {
+      "seed": 123,
+      "model": "optimized_cnn",
+      "best_test_accuracy_percent": 92.94,
+      "returncode": 0,
+      "script": "main.py",
+      "ckpt_tag": "s123_opt"
+    },
+    {
+      "seed": 123,
+      "model": "fcnn",
+      "best_test_accuracy_percent": 88.5,
+      "returncode": 0,
+      "script": "main_fcnn.py",
+      "ckpt_tag": "s123_fcnn"
+    },
+    {
+      "seed": 123,
+      "model": "original_cnn",
+      "best_test_accuracy_percent": 92.21,
+      "returncode": 0,
+      "script": "main_originalcnn.py",
+      "ckpt_tag": "s123_orig"
+    },
+    {
+      "seed": 456,
+      "model": "optimized_cnn",
+      "best_test_accuracy_percent": 92.85,
+      "returncode": 0,
+      "script": "main.py",
+      "ckpt_tag": "s456_opt"
+    },
+    {
+      "seed": 456,
+      "model": "fcnn",
+      "best_test_accuracy_percent": 88.65,
+      "returncode": 0,
+      "script": "main_fcnn.py",
+      "ckpt_tag": "s456_fcnn"
+    },
+    {
+      "seed": 456,
+      "model": "original_cnn",
+      "best_test_accuracy_percent": 92.1,
+      "returncode": 0,
+      "script": "main_originalcnn.py",
+      "ckpt_tag": "s456_orig"
+    },
+    {
+      "seed": 1024,
+      "model": "optimized_cnn",
+      "best_test_accuracy_percent": 92.93,
+      "returncode": 0,
+      "script": "main.py",
+      "ckpt_tag": "s1024_opt"
+    },
+    {
+      "seed": 1024,
+      "model": "fcnn",
+      "best_test_accuracy_percent": 88.94,
+      "returncode": 0,
+      "script": "main_fcnn.py",
+      "ckpt_tag": "s1024_fcnn"
+    },
+    {
+      "seed": 1024,
+      "model": "original_cnn",
+      "best_test_accuracy_percent": 92.03,
+      "returncode": 0,
+      "script": "main_originalcnn.py",
+      "ckpt_tag": "s1024_orig"
+    },
+    {
+      "seed": 2025,
+      "model": "optimized_cnn",
+      "best_test_accuracy_percent": 92.99,
+      "returncode": 0,
+      "script": "main.py",
+      "ckpt_tag": "s2025_opt"
+    },
+    {
+      "seed": 2025,
+      "model": "fcnn",
+      "best_test_accuracy_percent": 88.97,
+      "returncode": 0,
+      "script": "main_fcnn.py",
+      "ckpt_tag": "s2025_fcnn"
+    },
+    {
+      "seed": 2025,
+      "model": "original_cnn",
+      "best_test_accuracy_percent": 91.99,
+      "returncode": 0,
+      "script": "main_originalcnn.py",
+      "ckpt_tag": "s2025_orig"
+    }
+  ]
+}

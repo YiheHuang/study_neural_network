@@ -1,0 +1,11 @@
+{"iteration": 1, "game_in_iteration": 1, "result": "BLACK_WIN", "steps": 81, "samples": 81, "elapsed_sec": 3.19}
+{"iteration": 1, "game_in_iteration": 1, "result": "WHITE_WIN", "steps": 110, "samples": 110, "elapsed_sec": 23.38}
+{"iteration": 1, "game_in_iteration": 2, "result": "WHITE_WIN", "steps": 110, "samples": 110, "elapsed_sec": 45.02}
+{"iteration": 1, "game_in_iteration": 3, "result": "WHITE_WIN", "steps": 110, "samples": 110, "elapsed_sec": 67.36}
+{"iteration": 1, "game_in_iteration": 4, "result": "WHITE_WIN", "steps": 110, "samples": 110, "elapsed_sec": 90.46}
+{"iteration": 1, "game_in_iteration": 5, "result": "WHITE_WIN", "steps": 110, "samples": 110, "elapsed_sec": 115.05}
+{"iteration": 1, "game_in_iteration": 6, "result": "WHITE_WIN", "steps": 110, "samples": 110, "elapsed_sec": 136.7}
+{"iteration": 1, "game_in_iteration": 7, "result": "WHITE_WIN", "steps": 110, "samples": 110, "elapsed_sec": 161.97}
+{"iteration": 1, "game_in_iteration": 8, "result": "WHITE_WIN", "steps": 110, "samples": 110, "elapsed_sec": 185.14}
+{"iteration": 1, "game_in_iteration": 9, "result": "WHITE_WIN", "steps": 110, "samples": 110, "elapsed_sec": 212.56}
+{"iteration": 1, "game_in_iteration": 10, "result": "WHITE_WIN", "steps": 110, "samples": 110, "elapsed_sec": 241.23}
