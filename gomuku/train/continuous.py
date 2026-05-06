@@ -16,9 +16,11 @@ from model.network import GomokuNet
 from selfplay import generate_selfplay_data
 from train.utils import (
     Sample,
+    device_banner,
     load_config,
     load_model_weights,
     prepare_tensors,
+    resolve_device,
     set_seed,
     train_one_epoch,
 )
@@ -37,7 +39,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--epochs", type=int, default=2)
     parser.add_argument("--channels", type=int, default=64)
     parser.add_argument("--res-blocks", type=int, default=6)
-    parser.add_argument("--device", type=str, default="cpu")
+    parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--latest-path", type=str, default="checkpoints/latest_model.pt")
     parser.add_argument("--best-path", type=str, default="checkpoints/best_model.pt")
@@ -73,7 +75,7 @@ def main() -> None:
     c_puct = float(cfg["c_puct"])
     eval_games = int(cfg["eval_games"])
     promote_threshold = float(cfg["promote_threshold"])
-    device = torch.device(args.device)
+    device = resolve_device(args.device)
 
     latest_path = Path(args.latest_path)
     best_path = Path(args.best_path)
@@ -111,6 +113,7 @@ def main() -> None:
         f"from latest={latest_path} exists={loaded_latest}, "
         f"best={best_path} exists={best_path.exists()}"
     )
+    print(device_banner(args.device, device))
 
     interrupted = False
     try:

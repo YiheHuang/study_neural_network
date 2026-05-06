@@ -12,6 +12,23 @@ from torch import nn, optim
 
 Sample = Tuple[np.ndarray, np.ndarray, float]
 
+def resolve_device(preferred: str | torch.device) -> torch.device:
+    """
+    Prefer CUDA, fallback to CPU if unavailable.
+
+    - preferred: "cuda", "cpu", "cuda:0", torch.device(...)
+    """
+    dev = torch.device(preferred)
+    if dev.type == "cuda" and not torch.cuda.is_available():
+        return torch.device("cpu")
+    return dev
+
+
+def device_banner(requested: str | torch.device, resolved: torch.device) -> str:
+    if torch.device(requested).type == resolved.type:
+        return f"device={resolved}"
+    return f"device={resolved} (requested {requested}, fallback applied)"
+
 
 def load_config(path: str) -> dict:
     with open(path, "r", encoding="utf-8") as f:

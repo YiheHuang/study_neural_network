@@ -11,6 +11,7 @@ import torch
 from env.board import Board, GameResult, Player
 from mcts import MCTS
 from model.network import GomokuNet
+from train.utils import resolve_device
 
 
 def parse_args() -> argparse.Namespace:
@@ -20,7 +21,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--human", choices=["black", "white"], default="black")
     parser.add_argument("--simulations", type=int, default=80)
     parser.add_argument("--model-path", type=str, default="")
-    parser.add_argument("--device", type=str, default="cpu")
+    parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--channels", type=int, default=64)
     parser.add_argument("--res-blocks", type=int, default=6)
     return parser.parse_args()
@@ -33,6 +34,7 @@ class GomokuGUI:
         self.human_player = Player.BLACK if args.human == "black" else Player.WHITE
         self.ai_player = self.human_player.opponent()
         self.ai_thinking = False
+        self.device = resolve_device(args.device)
 
         self.model = GomokuNet(
             board_size=args.board_size,
@@ -147,7 +149,7 @@ class GomokuGUI:
             move, _ = self.mcts.run(
                 self.board,
                 simulations=self.args.simulations,
-                device=self.args.device,
+                device=self.device,
             )
             self.root.after(0, lambda: self._finish_ai_move(move))
         except Exception as exc:

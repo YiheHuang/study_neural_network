@@ -8,6 +8,7 @@ import torch
 from env.board import Board, GameResult, Player
 from mcts import MCTS
 from model.network import GomokuNet
+from train.utils import resolve_device
 
 
 def parse_args() -> argparse.Namespace:
@@ -16,7 +17,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--human", choices=["black", "white"], default="black")
     parser.add_argument("--simulations", type=int, default=120)
     parser.add_argument("--model-path", type=str, default="")
-    parser.add_argument("--device", type=str, default="cpu")
+    parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--channels", type=int, default=64)
     parser.add_argument("--res-blocks", type=int, default=6)
     return parser.parse_args()
@@ -58,6 +59,7 @@ def main() -> None:
     board = Board(size=args.board_size)
     human_player = _player_from_choice(args.human)
     ai_player = human_player.opponent()
+    device = resolve_device(args.device)
 
     model = _load_model(args)
     mcts = MCTS(model=model, c_puct=1.5)
@@ -80,7 +82,7 @@ def main() -> None:
                     print(f"Invalid move: {exc}")
         else:
             print(f"\nAI is thinking ({args.simulations} simulations)...")
-            move, _ = mcts.run(board, simulations=args.simulations, device=args.device)
+            move, _ = mcts.run(board, simulations=args.simulations, device=device)
             board.place_stone(*move)
             print(f"AI move: {move[0]} {move[1]}")
 

@@ -97,7 +97,7 @@ python -m app.gui --human white --simulations 120 --model-path checkpoints/best_
 - `--human`（默认 `black`，可选 `black|white`）：人类执子颜色。
 - `--simulations`（默认 `120`）：AI 每步 MCTS 模拟次数，越大通常越强但更慢。
 - `--model-path`（默认空）：模型权重路径；留空则使用随机初始化参数。
-- `--device`（默认 `cpu`）：推理设备，如 `cpu` 或 `cuda`。
+- `--device`（默认 `cuda`）：推理设备，如 `cuda` 或 `cpu`；若 CUDA 不可用会自动回退到 CPU。
 - `--channels`（默认 `64`）：网络主干通道数。
 - `--res-blocks`（默认 `6`）：残差块数量。
 
@@ -108,7 +108,7 @@ python -m app.gui --human white --simulations 120 --model-path checkpoints/best_
 - `--human`（默认 `black`，可选 `black|white`）：人类执子颜色。
 - `--simulations`（默认 `80`）：AI 每步 MCTS 模拟次数。
 - `--model-path`（默认空）：模型权重路径；留空时自动尝试 `best_model.pt`/`latest_model.pt`。
-- `--device`（默认 `cpu`）：推理设备，如 `cpu` 或 `cuda`。
+- `--device`（默认 `cuda`）：推理设备，如 `cuda` 或 `cpu`；若 CUDA 不可用会自动回退到 CPU。
 - `--channels`（默认 `64`）：网络主干通道数。
 - `--res-blocks`（默认 `6`）：残差块数量。
 
@@ -122,7 +122,7 @@ python -m app.gui --human white --simulations 120 --model-path checkpoints/best_
 - `--epochs`（默认 `2`）：每轮训练 epoch 数。
 - `--channels`（默认 `64`）：网络主干通道数。
 - `--res-blocks`（默认 `6`）：残差块数量。
-- `--device`（默认 `cpu`）：训练设备，如 `cpu` 或 `cuda`。
+- `--device`（默认 `cuda`）：训练设备，如 `cuda` 或 `cpu`；若 CUDA 不可用会自动回退到 CPU。
 - `--lr`（默认 `1e-3`）：Adam 学习率。
 - `--save-path`（默认 `checkpoints/latest_model.pt`）：训练后模型保存路径。
 - `--seed`（默认 `42`）：随机种子。
@@ -138,7 +138,7 @@ python -m app.gui --human white --simulations 120 --model-path checkpoints/best_
 - `--epochs`（默认 `2`）：每轮训练 epoch 数。
 - `--channels`（默认 `64`）：网络主干通道数。
 - `--res-blocks`（默认 `6`）：残差块数量。
-- `--device`（默认 `cpu`）：训练/评估设备，如 `cpu` 或 `cuda`。
+- `--device`（默认 `cuda`）：训练/评估设备，如 `cuda` 或 `cpu`；若 CUDA 不可用会自动回退到 CPU。
 - `--lr`（默认 `1e-3`）：Adam 学习率。
 - `--latest-path`（默认 `checkpoints/latest_model.pt`）：latest 模型路径（启动时优先加载，训练后覆盖保存）。
 - `--best-path`（默认 `checkpoints/best_model.pt`）：best 模型路径（晋升后覆盖保存）。

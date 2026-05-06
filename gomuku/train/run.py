@@ -9,7 +9,15 @@ from torch import optim
 
 from model.network import GomokuNet
 from selfplay import generate_selfplay_data
-from train.utils import Sample, load_config, prepare_tensors, set_seed, train_one_epoch
+from train.utils import (
+    Sample,
+    device_banner,
+    load_config,
+    prepare_tensors,
+    resolve_device,
+    set_seed,
+    train_one_epoch,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -22,7 +30,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--epochs", type=int, default=2)
     parser.add_argument("--channels", type=int, default=64)
     parser.add_argument("--res-blocks", type=int, default=6)
-    parser.add_argument("--device", type=str, default="cpu")
+    parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--save-path", type=str, default="checkpoints/latest_model.pt")
     parser.add_argument("--seed", type=int, default=42)
@@ -37,7 +45,7 @@ def main() -> None:
     board_size = int(cfg["board_size"])
     c_puct = float(cfg["c_puct"])
     simulations = int(args.simulations or cfg["mcts_simulations"])
-    device = torch.device(args.device)
+    device = resolve_device(args.device)
 
     model = GomokuNet(
         board_size=board_size,
@@ -49,7 +57,7 @@ def main() -> None:
     print("Training start")
     print(
         f"settings: iterations={args.iterations}, games/iter={args.games_per_iter}, "
-        f"simulations={simulations}, epochs={args.epochs}, device={device}"
+        f"simulations={simulations}, epochs={args.epochs}, {device_banner(args.device, device)}"
     )
 
     all_samples: List[Sample] = []
