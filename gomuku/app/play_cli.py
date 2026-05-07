@@ -20,6 +20,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--channels", type=int, default=64)
     parser.add_argument("--res-blocks", type=int, default=6)
+    parser.add_argument(
+        "--mcts-infer-batch-size",
+        type=int,
+        default=8,
+        help="MCTS NN batch size (1=fully sequential evaluation).",
+    )
     return parser.parse_args()
 
 
@@ -82,7 +88,12 @@ def main() -> None:
                     print(f"Invalid move: {exc}")
         else:
             print(f"\nAI is thinking ({args.simulations} simulations)...")
-            move, _ = mcts.run(board, simulations=args.simulations, device=device)
+            move, _ = mcts.run(
+                board,
+                simulations=args.simulations,
+                device=device,
+                infer_batch_size=args.mcts_infer_batch_size,
+            )
             board.place_stone(*move)
             print(f"AI move: {move[0]} {move[1]}")
 

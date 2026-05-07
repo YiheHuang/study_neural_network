@@ -61,6 +61,27 @@ def parse_args() -> argparse.Namespace:
         "--replay-path", type=str, default="logs/replay_buffer_latest.npz"
     )
     parser.add_argument("--replay-decay", type=float, default=0.03)
+    parser.add_argument(
+        "--mcts-infer-batch-size",
+        type=int,
+        default=8,
+        help="Leaf NN evaluations per forward during MCTS (>1 enables batched inference).",
+    )
+    parser.add_argument(
+        "--mcts-virtual-loss-weight",
+        type=float,
+        default=1.0,
+        help="Virtual loss strength for batched MCTS selection (unused when batch size is 1).",
+    )
+    parser.add_argument(
+        "--opening-random-moves",
+        type=int,
+        default=0,
+        help=(
+            "Per game, sample n uniformly from {0,...,k} then n random alternating legal "
+            "opening moves (Black first: Black (n+1)//2, White n//2). Not in replay. k<=0 disables."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -156,6 +177,11 @@ def main() -> None:
         f"training mix: vs_best_ratio={args.selfplay_vs_best_ratio}, "
         f"replay_decay={args.replay_decay}"
     )
+    if args.opening_random_moves > 0:
+        print(
+            f"self-play random opening: max_k={args.opening_random_moves} "
+            f"(each game n~U{{0..k}} then n random moves; excluded from training rows; arena unchanged)"
+        )
 
     interrupted = False
     try:
@@ -202,6 +228,9 @@ def main() -> None:
                     temperature_drop_move=args.temperature_drop_move,
                     dirichlet_alpha=args.dirichlet_alpha,
                     dirichlet_epsilon=args.dirichlet_epsilon,
+                    mcts_infer_batch_size=args.mcts_infer_batch_size,
+                    mcts_virtual_loss_weight=args.mcts_virtual_loss_weight,
+                    opening_random_moves=args.opening_random_moves,
                 )
                 new_samples.extend(self_samples)
             if mixed_games > 0:
@@ -226,6 +255,9 @@ def main() -> None:
                     temperature_drop_move=args.temperature_drop_move,
                     dirichlet_alpha=args.dirichlet_alpha,
                     dirichlet_epsilon=args.dirichlet_epsilon,
+                    mcts_infer_batch_size=args.mcts_infer_batch_size,
+                    mcts_virtual_loss_weight=args.mcts_virtual_loss_weight,
+                    opening_random_moves=args.opening_random_moves,
                 )
                 new_samples.extend(mixed_samples)
             replay.extend(new_samples)
@@ -268,6 +300,8 @@ def main() -> None:
                 worker_device=args.selfplay_worker_device
                 if args.selfplay_workers > 1
                 else None,
+                mcts_infer_batch_size=args.mcts_infer_batch_size,
+                mcts_virtual_loss_weight=args.mcts_virtual_loss_weight,
             )
             promoted = arena.candidate_win_rate >= promote_threshold
             if promoted:

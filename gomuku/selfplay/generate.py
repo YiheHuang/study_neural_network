@@ -32,6 +32,32 @@ def _result_to_winner(result: GameResult) -> int:
     return int(Player.EMPTY)
 
 
+def _apply_random_opening(board: Board, num_moves: int) -> None:
+    """Uniformly random legal moves at game start; does not produce training rows."""
+    if num_moves <= 0:
+        return
+    for _ in range(num_moves):
+        if board.game_result() != GameResult.ONGOING:
+            return
+        legal = board.legal_moves()
+        if not legal:
+            return
+        choice = int(np.random.randint(len(legal)))
+        row, col = legal[choice]
+        board.place_stone(row, col)
+
+
+def _random_opening_num_moves(max_moves: int) -> int:
+    """
+    Uniformly sample n ∈ {0,…,max_moves} inclusive. Then run n alternating random
+    legal moves (Black first): Black plays ⌊(n+1)/2⌋ times, White ⌊n/2⌋ times.
+    If max_moves <= 0 return 0.
+    """
+    if max_moves <= 0:
+        return 0
+    return int(np.random.randint(max_moves + 1))
+
+
 def play_self_game(
     model: torch.nn.Module,
     board_size: int,
@@ -42,8 +68,16 @@ def play_self_game(
     temperature_drop_move: int = 20,
     dirichlet_alpha: float = 0.3,
     dirichlet_epsilon: float = 0.25,
+    mcts_infer_batch_size: int = 1,
+    mcts_virtual_loss_weight: float = 1.0,
+    opening_random_moves: int = 0,
 ) -> Tuple[List[Tuple[np.ndarray, np.ndarray, float]], GameResult, int]:
+    """
+    opening_random_moves: k; each episode samples n ~ Uniform({0,…,k}); n alternating random moves
+    (Black first ⇒ Black (n+1)//2, White n//2). Not in replay.
+    """
     board = Board(size=board_size)
+    _apply_random_opening(board, _random_opening_num_moves(opening_random_moves))
     mcts = MCTS(model=model, c_puct=c_puct)
     history: List[Sample] = []
 
@@ -59,6 +93,8 @@ def play_self_game(
             add_dirichlet_noise=True,
             dirichlet_alpha=dirichlet_alpha,
             dirichlet_epsilon=dirichlet_epsilon,
+            infer_batch_size=mcts_infer_batch_size,
+            virtual_loss_weight=mcts_virtual_loss_weight,
         )
         history.append(Sample(state=state, policy=policy, player=int(board.current_player)))
         board.place_stone(*move)
@@ -108,6 +144,9 @@ def _play_self_game_worker(
     temperature_drop_move: int,
     dirichlet_alpha: float,
     dirichlet_epsilon: float,
+    mcts_infer_batch_size: int,
+    mcts_virtual_loss_weight: float,
+    opening_random_moves: int,
 ) -> Dict[str, Any]:
     if _WORKER_MODEL is None or _WORKER_DEVICE is None:
         raise RuntimeError("Worker model not initialized.")
@@ -121,6 +160,9 @@ def _play_self_game_worker(
         temperature_drop_move=temperature_drop_move,
         dirichlet_alpha=dirichlet_alpha,
         dirichlet_epsilon=dirichlet_epsilon,
+        mcts_infer_batch_size=mcts_infer_batch_size,
+        mcts_virtual_loss_weight=mcts_virtual_loss_weight,
+        opening_random_moves=opening_random_moves,
     )
     return {
         "game_id": game_id,
@@ -144,6 +186,9 @@ def generate_selfplay_data(
     temperature_drop_move: int = 20,
     dirichlet_alpha: float = 0.3,
     dirichlet_epsilon: float = 0.25,
+    mcts_infer_batch_size: int = 1,
+    mcts_virtual_loss_weight: float = 1.0,
+    opening_random_moves: int = 0,
 ) -> List[Tuple[np.ndarray, np.ndarray, float]]:
     dataset: List[Tuple[np.ndarray, np.ndarray, float]] = []
     if num_workers <= 1:
@@ -158,6 +203,9 @@ def generate_selfplay_data(
                 temperature_drop_move=temperature_drop_move,
                 dirichlet_alpha=dirichlet_alpha,
                 dirichlet_epsilon=dirichlet_epsilon,
+                mcts_infer_batch_size=mcts_infer_batch_size,
+                mcts_virtual_loss_weight=mcts_virtual_loss_weight,
+                opening_random_moves=opening_random_moves,
             )
             dataset.extend(game_data)
             if on_game_end is not None:
@@ -191,6 +239,9 @@ def generate_selfplay_data(
                 temperature_drop_move,
                 dirichlet_alpha,
                 dirichlet_epsilon,
+                mcts_infer_batch_size,
+                mcts_virtual_loss_weight,
+                opening_random_moves,
             ): game_id
             for game_id in range(num_games)
         }
@@ -219,8 +270,12 @@ def play_match_game(
     temperature_drop_move: int = 20,
     dirichlet_alpha: float = 0.3,
     dirichlet_epsilon: float = 0.25,
+    mcts_infer_batch_size: int = 1,
+    mcts_virtual_loss_weight: float = 1.0,
+    opening_random_moves: int = 0,
 ) -> Tuple[List[Tuple[np.ndarray, np.ndarray, float]], GameResult, int]:
     board = Board(size=board_size)
+    _apply_random_opening(board, _random_opening_num_moves(opening_random_moves))
     black_search = MCTS(model=black_model, c_puct=c_puct)
     white_search = MCTS(model=white_model, c_puct=c_puct)
     history: List[Sample] = []
@@ -238,6 +293,8 @@ def play_match_game(
             add_dirichlet_noise=True,
             dirichlet_alpha=dirichlet_alpha,
             dirichlet_epsilon=dirichlet_epsilon,
+            infer_batch_size=mcts_infer_batch_size,
+            virtual_loss_weight=mcts_virtual_loss_weight,
         )
         history.append(Sample(state=state, policy=policy, player=int(board.current_player)))
         board.place_stone(*move)
@@ -268,6 +325,9 @@ def generate_mixed_selfplay_data(
     temperature_drop_move: int = 20,
     dirichlet_alpha: float = 0.3,
     dirichlet_epsilon: float = 0.25,
+    mcts_infer_batch_size: int = 1,
+    mcts_virtual_loss_weight: float = 1.0,
+    opening_random_moves: int = 0,
 ) -> List[Tuple[np.ndarray, np.ndarray, float]]:
     dataset: List[Tuple[np.ndarray, np.ndarray, float]] = []
     for game_idx in range(num_games):
@@ -285,6 +345,9 @@ def generate_mixed_selfplay_data(
             temperature_drop_move=temperature_drop_move,
             dirichlet_alpha=dirichlet_alpha,
             dirichlet_epsilon=dirichlet_epsilon,
+            mcts_infer_batch_size=mcts_infer_batch_size,
+            mcts_virtual_loss_weight=mcts_virtual_loss_weight,
+            opening_random_moves=opening_random_moves,
         )
         dataset.extend(game_data)
         if on_game_end is not None:

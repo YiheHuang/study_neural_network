@@ -3,7 +3,12 @@ import torch
 
 from env.board import Board, Player
 from model.network import GomokuNet
-from model.predict import board_to_tensor, legal_moves_mask, predict_policy_value
+from model.predict import (
+    board_to_tensor,
+    legal_moves_mask,
+    predict_policy_value,
+    predict_policy_value_batch,
+)
 
 
 def test_board_to_tensor_shape_and_planes() -> None:
@@ -57,3 +62,21 @@ def test_predict_policy_value_masks_illegal_and_normalizes() -> None:
         assert policy[idx] == 0.0
 
     assert np.isclose(policy.sum(), 1.0, atol=1e-6)
+
+
+def test_predict_policy_value_batch_matches_single() -> None:
+    torch.manual_seed(0)
+    model = GomokuNet(board_size=9, channels=16, num_res_blocks=1)
+    b1 = Board(size=9)
+    b2 = Board(size=9)
+    b2.place_stone(4, 4)
+
+    p_single1, v1 = predict_policy_value(model, b1)
+    p_single2, v2 = predict_policy_value(model, b2)
+
+    out = predict_policy_value_batch(model, [b1, b2])
+    assert len(out) == 2
+    assert np.allclose(out[0][0], p_single1, atol=1e-5)
+    assert np.allclose(out[1][0], p_single2, atol=1e-5)
+    assert abs(out[0][1] - v1) < 1e-5
+    assert abs(out[1][1] - v2) < 1e-5

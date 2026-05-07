@@ -24,6 +24,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--channels", type=int, default=64)
     parser.add_argument("--res-blocks", type=int, default=6)
+    parser.add_argument("--mcts-infer-batch-size", type=int, default=8)
     return parser.parse_args()
 
 
@@ -150,6 +151,7 @@ class GomokuGUI:
                 self.board,
                 simulations=self.args.simulations,
                 device=self.device,
+                infer_batch_size=self.args.mcts_infer_batch_size,
             )
             self.root.after(0, lambda: self._finish_ai_move(move))
         except Exception as exc:

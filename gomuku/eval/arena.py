@@ -51,6 +51,8 @@ def _arena_worker_one_game(
     board_size: int,
     simulations: int,
     c_puct: float,
+    mcts_infer_batch_size: int,
+    mcts_virtual_loss_weight: float,
 ) -> Tuple[int, int]:
     """Returns (int(GameResult), 1 if candidate is black else 0)."""
     if _ARENA_CAND is None or _ARENA_BEST is None or _ARENA_DEVICE is None:
@@ -64,6 +66,8 @@ def _arena_worker_one_game(
         c_puct=c_puct,
         device=_ARENA_DEVICE,
         candidate_as_black=candidate_as_black,
+        mcts_infer_batch_size=mcts_infer_batch_size,
+        mcts_virtual_loss_weight=mcts_virtual_loss_weight,
     )
     return int(res), 1 if candidate_as_black else 0
 
@@ -99,6 +103,8 @@ def _play_one_game(
     c_puct: float,
     device: str | torch.device,
     candidate_as_black: bool,
+    mcts_infer_batch_size: int = 1,
+    mcts_virtual_loss_weight: float = 1.0,
 ) -> GameResult:
     board = Board(size=board_size)
     candidate_player = Player.BLACK if candidate_as_black else Player.WHITE
@@ -108,13 +114,25 @@ def _play_one_game(
     while board.game_result() == GameResult.ONGOING:
         if board.current_player == candidate_player:
             move, _ = candidate_search.run(
-                board, simulations=simulations, device=device,
-                add_dirichlet_noise=True, dirichlet_alpha=0.15, dirichlet_epsilon=0.25,
+                board,
+                simulations=simulations,
+                device=device,
+                add_dirichlet_noise=True,
+                dirichlet_alpha=0.15,
+                dirichlet_epsilon=0.25,
+                infer_batch_size=mcts_infer_batch_size,
+                virtual_loss_weight=mcts_virtual_loss_weight,
             )
         else:
             move, _ = best_search.run(
-                board, simulations=simulations, device=device,
-                add_dirichlet_noise=True, dirichlet_alpha=0.15, dirichlet_epsilon=0.25,
+                board,
+                simulations=simulations,
+                device=device,
+                add_dirichlet_noise=True,
+                dirichlet_alpha=0.15,
+                dirichlet_epsilon=0.25,
+                infer_batch_size=mcts_infer_batch_size,
+                virtual_loss_weight=mcts_virtual_loss_weight,
             )
         board.place_stone(*move)
     return board.game_result()
@@ -148,6 +166,8 @@ def evaluate_models(
     device: str | torch.device = "cpu",
     num_workers: int = 1,
     worker_device: str | torch.device | None = None,
+    mcts_infer_batch_size: int = 1,
+    mcts_virtual_loss_weight: float = 1.0,
 ) -> ArenaResult:
     result = ArenaResult(candidate_wins=0, best_wins=0, draws=0, games=games)
     if games <= 0:
@@ -164,6 +184,8 @@ def evaluate_models(
                 c_puct=c_puct,
                 device=device,
                 candidate_as_black=candidate_as_black,
+                mcts_infer_batch_size=mcts_infer_batch_size,
+                mcts_virtual_loss_weight=mcts_virtual_loss_weight,
             )
             _accumulate_game_result(result, game_result, candidate_as_black)
         return result
@@ -193,7 +215,13 @@ def evaluate_models(
     ) as executor:
         future_to_index = {
             executor.submit(
-                _arena_worker_one_game, i, board_size, simulations, c_puct
+                _arena_worker_one_game,
+                i,
+                board_size,
+                simulations,
+                c_puct,
+                mcts_infer_batch_size,
+                mcts_virtual_loss_weight,
             ): i
             for i in range(games)
         }

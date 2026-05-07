@@ -38,6 +38,26 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--temperature-drop-move", type=int, default=20)
     parser.add_argument("--dirichlet-alpha", type=float, default=0.3)
     parser.add_argument("--dirichlet-epsilon", type=float, default=0.25)
+    parser.add_argument(
+        "--mcts-infer-batch-size",
+        type=int,
+        default=8,
+        help="MCTS leaf batch size for NN inference (>1 batches forward passes).",
+    )
+    parser.add_argument(
+        "--mcts-virtual-loss-weight",
+        type=float,
+        default=1.0,
+        help="Virtual loss for batched MCTS (ignored when infer batch size is 1).",
+    )
+    parser.add_argument(
+        "--opening-random-moves",
+        type=int,
+        default=0,
+        help=(
+            "Per game, n~Uniform({0,...,k}) then n random alternating opener moves; not in replay."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -85,6 +105,9 @@ def main() -> None:
             temperature_drop_move=args.temperature_drop_move,
             dirichlet_alpha=args.dirichlet_alpha,
             dirichlet_epsilon=args.dirichlet_epsilon,
+            mcts_infer_batch_size=args.mcts_infer_batch_size,
+            mcts_virtual_loss_weight=args.mcts_virtual_loss_weight,
+            opening_random_moves=args.opening_random_moves,
         )
         all_samples.extend(new_data)
         print(f"collected samples: +{len(new_data)} (total={len(all_samples)})")

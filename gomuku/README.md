@@ -72,6 +72,14 @@ python -m train.continuous --max-iters 20 --games-per-iter 64 --simulations 40 -
 python -m train.continuous --max-iters 20 --games-per-iter 64 --simulations 40 --selfplay-workers 8 --selfplay-worker-device cpu --selfplay-temperature 1.0 --temperature-drop-move 24 --dirichlet-alpha 0.3 --dirichlet-epsilon 0.25
 ```
 
+随机开局示例（缓和先手偏重：每盘 **n~U{0,…,k}** 再随机开局 n 步，再 MCTS；**人机与 arena 仍从空盘开始**）：
+
+```bash
+python -m train.continuous --opening-random-moves 8 --max-iters 20 --games-per-iter 50 --simulations 40 --selfplay-workers 1 --device cuda
+```
+
+要点：`--opening-random-moves k` 表示每盘先 **等概率抽 n∈{0,…,k}**，再交替 **均匀随机合法落子** n 步（黑先手 ⇒ 黑子数 **⌊(n+1)/2⌋**、白子数 **⌊n/2⌋**）。随机步 **不写回放**；`--temperature-drop-move` 仍以 **第一手 MCTS** 起算。仅 **自对弈 / mixed**；**人机与 arena 仍空盘**。极少数随机子已决出胜负时该局可无 MCTS 样本。
+
 行为说明：
 
 - 启动时优先加载 `checkpoints/latest_model.pt`，不存在则随机初始化
@@ -112,6 +120,7 @@ python -m app.gui --human white --simulations 120 --model-path checkpoints/best_
 - `--device`（默认 `cuda`）：推理设备，如 `cuda` 或 `cpu`；若 CUDA 不可用会自动回退到 CPU。
 - `--channels`（默认 `64`）：网络主干通道数。
 - `--res-blocks`（默认 `6`）：残差块数量。
+- `--mcts-infer-batch-size`（默认 `8`）：MCTS 叶节点 NN 批量推理尺寸；`1` 为逐步串行推理。
 
 ### `python -m app.gui`
 
@@ -123,6 +132,7 @@ python -m app.gui --human white --simulations 120 --model-path checkpoints/best_
 - `--device`（默认 `cuda`）：推理设备，如 `cuda` 或 `cpu`；若 CUDA 不可用会自动回退到 CPU。
 - `--channels`（默认 `64`）：网络主干通道数。
 - `--res-blocks`（默认 `6`）：残差块数量。
+- `--mcts-infer-batch-size`（默认 `8`）：同 `play_cli`；`1` 等价于严格串行 NN 评估。
 
 ### `python -m train.run`
 
@@ -142,6 +152,9 @@ python -m app.gui --human white --simulations 120 --model-path checkpoints/best_
 - `--temperature-drop-move`（默认 `20`）：前多少手使用温度采样；之后改为贪心落子。
 - `--dirichlet-alpha`（默认 `0.3`）：根节点 Dirichlet 噪声参数（探索强度）。
 - `--dirichlet-epsilon`（默认 `0.25`）：根节点先验与噪声的混合比例。
+- `--mcts-infer-batch-size`（默认 `8`）：MCTS 叶节点 NN 批量推理大小；设为 `1` 即与「每扩展一次单次前向」同构（无批量 virtual loss）。
+- `--mcts-virtual-loss-weight`（默认 `1.0`）：批量 MCTS 的 virtual loss 强度。
+- `--opening-random-moves`（默认 `0`）：整数 **k**。每盘抽样 **n∼Uniform({0,…,k})**，再走 n 步随机开局（不写回放）；`k≤0` 关闭。
 
 ### `python -m train.continuous`
 
@@ -170,6 +183,9 @@ python -m app.gui --human white --simulations 120 --model-path checkpoints/best_
 - `--selfplay-vs-best-ratio`（默认 `0.2`）：训练采样时混入 `latest vs best` 对局占比（其余为 `latest vs latest`）。
 - `--replay-path`（默认 `logs/replay_buffer_latest.npz`）：回放池持久化文件路径；启动会自动恢复并在训练中持续覆盖保存。
 - `--replay-decay`（默认 `0.03`）：训练采样衰减系数；越大越偏向最近数据。
+- `--mcts-infer-batch-size`（默认 `8`）：自对弈、mixed、`arena` 评估（`latest vs best`）中的 MCTS 批量推理尺寸。
+- `--mcts-virtual-loss-weight`（默认 `1.0`）：批量 MCTS 的 virtual loss 强度。
+- `--opening-random-moves`（默认 `0`）：**k**。每盘 **n∼U({0,…,k})** 后执行 n 步随机开局（**不写回放**）；**不包含**人机与 arena；`k≤0` 等价关闭。
 
 ## 目录说明
 
