@@ -35,7 +35,7 @@ class GomokuNet(nn.Module):
 
     def __init__(
         self,
-        board_size: int = 15,
+        board_size: int = 9,
         in_channels: int = 3,
         channels: int = 64,
         num_res_blocks: int = 6,

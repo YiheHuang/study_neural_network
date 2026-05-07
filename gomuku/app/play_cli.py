@@ -13,7 +13,7 @@ from train.utils import resolve_device
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Play Gomoku against NN+MCTS AI.")
-    parser.add_argument("--board-size", type=int, default=15)
+    parser.add_argument("--board-size", type=int, default=9)
     parser.add_argument("--human", choices=["black", "white"], default="black")
     parser.add_argument("--simulations", type=int, default=120)
     parser.add_argument("--model-path", type=str, default="")

@@ -16,7 +16,7 @@ from train.utils import resolve_device
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Gomoku GUI (Tkinter)")
-    parser.add_argument("--board-size", type=int, default=15)
+    parser.add_argument("--board-size", type=int, default=9)
     parser.add_argument("--cell-size", type=int, default=36)
     parser.add_argument("--human", choices=["black", "white"], default="black")
     parser.add_argument("--simulations", type=int, default=80)

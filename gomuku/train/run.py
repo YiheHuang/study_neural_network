@@ -34,6 +34,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--save-path", type=str, default="checkpoints/latest_model.pt")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--selfplay-temperature", type=float, default=1.0)
+    parser.add_argument("--temperature-drop-move", type=int, default=20)
+    parser.add_argument("--dirichlet-alpha", type=float, default=0.3)
+    parser.add_argument("--dirichlet-epsilon", type=float, default=0.25)
     return parser.parse_args()
 
 
@@ -59,6 +63,13 @@ def main() -> None:
         f"settings: iterations={args.iterations}, games/iter={args.games_per_iter}, "
         f"simulations={simulations}, epochs={args.epochs}, {device_banner(args.device, device)}"
     )
+    print(
+        "self-play exploration: "
+        f"temperature={args.selfplay_temperature}, "
+        f"temperature_drop_move={args.temperature_drop_move}, "
+        f"dirichlet_alpha={args.dirichlet_alpha}, "
+        f"dirichlet_epsilon={args.dirichlet_epsilon}"
+    )
 
     all_samples: List[Sample] = []
     for it in range(1, args.iterations + 1):
@@ -70,6 +81,10 @@ def main() -> None:
             simulations=simulations,
             c_puct=c_puct,
             device=device,
+            temperature=args.selfplay_temperature,
+            temperature_drop_move=args.temperature_drop_move,
+            dirichlet_alpha=args.dirichlet_alpha,
+            dirichlet_epsilon=args.dirichlet_epsilon,
         )
         all_samples.extend(new_data)
         print(f"collected samples: +{len(new_data)} (total={len(all_samples)})")
@@ -83,6 +98,7 @@ def main() -> None:
                 policy_targets=policies,
                 value_targets=values,
                 batch_size=args.batch_size,
+                board_size=board_size,
             )
             print(f"[Iteration {it}] epoch {epoch}/{args.epochs} loss={loss:.4f}")
 

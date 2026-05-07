@@ -1,8 +1,8 @@
-# Gomuku: 15x15 Gomoku AI
+# Gomuku: 9x9 Gomoku AI
 
 这个项目用于从零构建一个基于神经网络的五子棋 AI。当前已完成：
 
-- 15x15 无禁手规则环境
+- 9x9 无禁手规则环境
 - 胜负/和棋判定
 - 神经网络（策略头 + 价值头）
 - MCTS 搜索落子
@@ -60,6 +60,18 @@ python -m app.play_cli --human black --simulations 120 --model-path checkpoints/
 python -m train.continuous --max-iters 20 --games-per-iter 4 --simulations 40 --eval-simulations 20 --epochs 2
 ```
 
+并行自对弈示例（推荐用于提速）：
+
+```bash
+python -m train.continuous --max-iters 20 --games-per-iter 64 --simulations 40 --selfplay-workers 8 --selfplay-worker-device cpu
+```
+
+增强随机探索示例（避免每盘几乎相同）：
+
+```bash
+python -m train.continuous --max-iters 20 --games-per-iter 64 --simulations 40 --selfplay-workers 8 --selfplay-worker-device cpu --selfplay-temperature 1.0 --temperature-drop-move 24 --dirichlet-alpha 0.3 --dirichlet-epsilon 0.25
+```
+
 行为说明：
 
 - 启动时优先加载 `checkpoints/latest_model.pt`，不存在则随机初始化
@@ -93,7 +105,7 @@ python -m app.gui --human white --simulations 120 --model-path checkpoints/best_
 
 ### `python -m app.play_cli`
 
-- `--board-size`（默认 `15`）：棋盘大小，表示 `N x N`。
+- `--board-size`（默认 `9`）：棋盘大小，表示 `N x N`。
 - `--human`（默认 `black`，可选 `black|white`）：人类执子颜色。
 - `--simulations`（默认 `120`）：AI 每步 MCTS 模拟次数，越大通常越强但更慢。
 - `--model-path`（默认空）：模型权重路径；留空则使用随机初始化参数。
@@ -103,7 +115,7 @@ python -m app.gui --human white --simulations 120 --model-path checkpoints/best_
 
 ### `python -m app.gui`
 
-- `--board-size`（默认 `15`）：棋盘大小，表示 `N x N`。
+- `--board-size`（默认 `9`）：棋盘大小，表示 `N x N`。
 - `--cell-size`（默认 `36`）：GUI 每个网格的像素大小。
 - `--human`（默认 `black`，可选 `black|white`）：人类执子颜色。
 - `--simulations`（默认 `80`）：AI 每步 MCTS 模拟次数。
@@ -126,6 +138,10 @@ python -m app.gui --human white --simulations 120 --model-path checkpoints/best_
 - `--lr`（默认 `1e-3`）：Adam 学习率。
 - `--save-path`（默认 `checkpoints/latest_model.pt`）：训练后模型保存路径。
 - `--seed`（默认 `42`）：随机种子。
+- `--selfplay-temperature`（默认 `1.0`）：自对弈前期按访问分布采样的温度；越大越随机。
+- `--temperature-drop-move`（默认 `20`）：前多少手使用温度采样；之后改为贪心落子。
+- `--dirichlet-alpha`（默认 `0.3`）：根节点 Dirichlet 噪声参数（探索强度）。
+- `--dirichlet-epsilon`（默认 `0.25`）：根节点先验与噪声的混合比例。
 
 ### `python -m train.continuous`
 
@@ -145,6 +161,15 @@ python -m app.gui --human white --simulations 120 --model-path checkpoints/best_
 - `--log-path`（默认 `logs/train_log.jsonl`）：每轮训练日志输出路径。
 - `--game-log-path`（默认 `logs/train_game_log.jsonl`）：每盘自对弈即时日志输出路径。
 - `--seed`（默认 `42`）：随机种子。
+- `--selfplay-workers`（默认 `1`）：自对弈与 arena 评估的并行进程数；大于 1 时，自对弈与 `latest vs best` 评估均按该进程数并行（单进程时 arena 使用 `--device`）。
+- `--selfplay-worker-device`（默认 `cpu`）：并行 worker 的推理设备（自对弈与 arena 共用），推荐 `cpu`（避免多进程争抢单卡）。
+- `--selfplay-temperature`（默认 `1.0`）：自对弈前期按访问分布采样的温度；越大越随机。
+- `--temperature-drop-move`（默认 `20`）：前多少手使用温度采样；之后改为贪心落子。
+- `--dirichlet-alpha`（默认 `0.3`）：根节点 Dirichlet 噪声参数（探索强度）。
+- `--dirichlet-epsilon`（默认 `0.25`）：根节点先验与噪声的混合比例。
+- `--selfplay-vs-best-ratio`（默认 `0.2`）：训练采样时混入 `latest vs best` 对局占比（其余为 `latest vs latest`）。
+- `--replay-path`（默认 `logs/replay_buffer_latest.npz`）：回放池持久化文件路径；启动会自动恢复并在训练中持续覆盖保存。
+- `--replay-decay`（默认 `0.03`）：训练采样衰减系数；越大越偏向最近数据。
 
 ## 目录说明
 

@@ -15,15 +15,19 @@ from env.board import GameResult
 from model.network import GomokuNet
 from selfplay import generate_selfplay_data
 from train.utils import (
+    build_decay_weights,
     Sample,
     device_banner,
     load_config,
     load_model_weights,
+    load_replay_buffer,
     prepare_tensors,
     resolve_device,
+    save_replay_buffer,
     set_seed,
     train_one_epoch,
 )
+from selfplay import generate_mixed_selfplay_data
 
 
 def parse_args() -> argparse.Namespace:
@@ -46,6 +50,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--log-path", type=str, default="logs/train_log.jsonl")
     parser.add_argument("--game-log-path", type=str, default="logs/train_game_log.jsonl")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--selfplay-workers", type=int, default=1)
+    parser.add_argument("--selfplay-worker-device", type=str, default="cpu")
+    parser.add_argument("--selfplay-temperature", type=float, default=1.0)
+    parser.add_argument("--temperature-drop-move", type=int, default=20)
+    parser.add_argument("--dirichlet-alpha", type=float, default=0.15)
+    parser.add_argument("--dirichlet-epsilon", type=float, default=0.25)
+    parser.add_argument("--selfplay-vs-best-ratio", type=float, default=0.2)
+    parser.add_argument(
+        "--replay-path", type=str, default="logs/replay_buffer_latest.npz"
+    )
+    parser.add_argument("--replay-decay", type=float, default=0.03)
     return parser.parse_args()
 
 
@@ -81,6 +96,7 @@ def main() -> None:
     best_path = Path(args.best_path)
     log_path = Path(args.log_path)
     game_log_path = Path(args.game_log_path)
+    replay_path = Path(args.replay_path)
 
     latest_model = GomokuNet(
         board_size=board_size,
@@ -105,8 +121,16 @@ def main() -> None:
         best_path.parent.mkdir(parents=True, exist_ok=True)
         torch.save(best_model.state_dict(), best_path)
 
-    optimizer = optim.Adam(latest_model.parameters(), lr=args.lr)
+    optimizer = optim.Adam(latest_model.parameters(), lr=args.lr, weight_decay=1e-4)
     replay = deque(maxlen=replay_buffer_size)
+    replay_birth_iters = deque(maxlen=replay_buffer_size)
+    loaded_samples, loaded_birth_iters = load_replay_buffer(replay_path)
+    if loaded_samples:
+        loaded_samples = loaded_samples[-replay_buffer_size:]
+        loaded_birth_iters = loaded_birth_iters[-replay_buffer_size:]
+        replay.extend(loaded_samples)
+        replay_birth_iters.extend(loaded_birth_iters)
+    global_iter_base = max(replay_birth_iters) if replay_birth_iters else 0
 
     print("Continuous training start")
     print(
@@ -114,10 +138,29 @@ def main() -> None:
         f"best={best_path} exists={best_path.exists()}"
     )
     print(device_banner(args.device, device))
+    print(f"loaded replay samples={len(replay)} from {replay_path}")
+    print(f"global_iter_base={global_iter_base}")
+    if args.selfplay_workers > 1:
+        print(
+            f"parallel self-play enabled: workers={args.selfplay_workers}, "
+            f"worker_device={args.selfplay_worker_device}"
+        )
+    print(
+        "self-play exploration: "
+        f"temperature={args.selfplay_temperature}, "
+        f"temperature_drop_move={args.temperature_drop_move}, "
+        f"dirichlet_alpha={args.dirichlet_alpha}, "
+        f"dirichlet_epsilon={args.dirichlet_epsilon}"
+    )
+    print(
+        f"training mix: vs_best_ratio={args.selfplay_vs_best_ratio}, "
+        f"replay_decay={args.replay_decay}"
+    )
 
     interrupted = False
     try:
         for it in range(1, args.max_iters + 1):
+            global_it = global_iter_base + it
             iter_start = time.time()
             print(f"\n[Iter {it}] self-play generating...")
             iter_game_start = time.time()
@@ -141,19 +184,60 @@ def main() -> None:
                     f"elapsed={elapsed:.1f}s"
                 )
 
-            new_samples = generate_selfplay_data(
-                model=latest_model,
-                num_games=args.games_per_iter,
-                board_size=board_size,
-                simulations=args.simulations,
-                c_puct=c_puct,
-                device=device,
-                on_game_end=on_game_end,
-            )
+            mixed_games = int(args.games_per_iter * max(0.0, min(1.0, args.selfplay_vs_best_ratio)))
+            self_games = max(0, args.games_per_iter - mixed_games)
+            new_samples: list[Sample] = []
+            if self_games > 0:
+                self_samples = generate_selfplay_data(
+                    model=latest_model,
+                    num_games=self_games,
+                    board_size=board_size,
+                    simulations=args.simulations,
+                    c_puct=c_puct,
+                    device=device,
+                    on_game_end=on_game_end,
+                    num_workers=args.selfplay_workers,
+                    worker_device=args.selfplay_worker_device,
+                    temperature=args.selfplay_temperature,
+                    temperature_drop_move=args.temperature_drop_move,
+                    dirichlet_alpha=args.dirichlet_alpha,
+                    dirichlet_epsilon=args.dirichlet_epsilon,
+                )
+                new_samples.extend(self_samples)
+            if mixed_games > 0:
+                mixed_offset = self_games
+
+                def on_mixed_game_end(
+                    game_idx: int, sample_count: int, result: GameResult, steps: int
+                ) -> None:
+                    if on_game_end is not None:
+                        on_game_end(mixed_offset + game_idx, sample_count, result, steps)
+
+                mixed_samples = generate_mixed_selfplay_data(
+                    latest_model=latest_model,
+                    best_model=best_model,
+                    num_games=mixed_games,
+                    board_size=board_size,
+                    simulations=args.simulations,
+                    c_puct=c_puct,
+                    device=device,
+                    on_game_end=on_mixed_game_end,
+                    temperature=args.selfplay_temperature,
+                    temperature_drop_move=args.temperature_drop_move,
+                    dirichlet_alpha=args.dirichlet_alpha,
+                    dirichlet_epsilon=args.dirichlet_epsilon,
+                )
+                new_samples.extend(mixed_samples)
             replay.extend(new_samples)
+            replay_birth_iters.extend([global_it] * len(new_samples))
             print(f"[Iter {it}] samples +{len(new_samples)}; replay={len(replay)}")
 
             states, policies, values = prepare_tensors(list(replay), device=device)
+            decay_weights = build_decay_weights(
+                birth_iters=list(replay_birth_iters),
+                current_iter=global_it,
+                decay=args.replay_decay,
+            ).to(device)
             loss = 0.0
             for epoch in range(1, args.epochs + 1):
                 loss = train_one_epoch(
@@ -163,6 +247,8 @@ def main() -> None:
                     policy_targets=policies,
                     value_targets=values,
                     batch_size=args.batch_size,
+                    sample_weights=decay_weights,
+                    board_size=board_size,
                 )
                 print(f"[Iter {it}] epoch {epoch}/{args.epochs} loss={loss:.4f}")
 
@@ -178,6 +264,10 @@ def main() -> None:
                 simulations=args.eval_simulations,
                 c_puct=c_puct,
                 device=device,
+                num_workers=args.selfplay_workers,
+                worker_device=args.selfplay_worker_device
+                if args.selfplay_workers > 1
+                else None,
             )
             promoted = arena.candidate_win_rate >= promote_threshold
             if promoted:
@@ -188,6 +278,7 @@ def main() -> None:
             elapsed = time.time() - iter_start
             log_item = {
                 "iteration": it,
+                "global_iteration": global_it,
                 "new_samples": len(new_samples),
                 "replay_size": len(replay),
                 "loss": round(loss, 6),
@@ -199,6 +290,7 @@ def main() -> None:
                 "best_model_path": str(best_path),
             }
             _append_log(log_path, log_item)
+            save_replay_buffer(replay_path, list(replay), list(replay_birth_iters))
             print(
                 f"[Iter {it}] arena winrate={arena.candidate_win_rate:.3f}, "
                 f"promoted={promoted}, elapsed={elapsed:.1f}s"
@@ -210,6 +302,7 @@ def main() -> None:
     finally:
         latest_path.parent.mkdir(parents=True, exist_ok=True)
         torch.save(latest_model.state_dict(), latest_path)
+        save_replay_buffer(replay_path, list(replay), list(replay_birth_iters))
         if interrupted:
             print(f"Latest model checkpoint saved to: {latest_path}")
             print("Interrupted gracefully.")
