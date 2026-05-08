@@ -54,9 +54,30 @@ def parse_args() -> argparse.Namespace:
         "--opening-random-moves",
         type=int,
         default=0,
-        help=(
-            "Per game, n~Uniform({0,...,k}) then n random alternating opener moves; not in replay."
-        ),
+        help="Per game, n~U({0..k}); opener moves (uniform or MCTS); not in replay.",
+    )
+    parser.add_argument(
+        "--opening-policy",
+        type=str,
+        choices=("uniform", "mcts"),
+        default="uniform",
+        help="uniform=random legal; mcts=same as train MCTS (visit softmax + selfplay temperature).",
+    )
+    parser.add_argument(
+        "--opening-simulations",
+        type=int,
+        default=0,
+        help="MCTS sims per opener move when opening-policy=mcts; 0 or negative uses --simulations.",
+    )
+    parser.add_argument(
+        "--disable-tactical-forced-moves",
+        action="store_true",
+        help="Disable MCTS one-move win/block shortcut before simulation.",
+    )
+    parser.add_argument(
+        "--amp",
+        action="store_true",
+        help="Enable automatic mixed precision (AMP) for faster GPU training.",
     )
     return parser.parse_args()
 
@@ -70,6 +91,7 @@ def main() -> None:
     c_puct = float(cfg["c_puct"])
     simulations = int(args.simulations or cfg["mcts_simulations"])
     device = resolve_device(args.device)
+    tactical_fm = not args.disable_tactical_forced_moves
 
     model = GomokuNet(
         board_size=board_size,
@@ -108,6 +130,9 @@ def main() -> None:
             mcts_infer_batch_size=args.mcts_infer_batch_size,
             mcts_virtual_loss_weight=args.mcts_virtual_loss_weight,
             opening_random_moves=args.opening_random_moves,
+            opening_policy=args.opening_policy,
+            opening_simulations=args.opening_simulations,
+            tactical_forced_moves=tactical_fm,
         )
         all_samples.extend(new_data)
         print(f"collected samples: +{len(new_data)} (total={len(all_samples)})")
@@ -122,6 +147,7 @@ def main() -> None:
                 value_targets=values,
                 batch_size=args.batch_size,
                 board_size=board_size,
+                use_amp=args.amp,
             )
             print(f"[Iteration {it}] epoch {epoch}/{args.epochs} loss={loss:.4f}")
 

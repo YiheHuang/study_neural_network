@@ -6,6 +6,7 @@ import time
 from collections import deque
 from copy import deepcopy
 from pathlib import Path
+from typing import Literal
 
 import torch
 from torch import optim
@@ -27,7 +28,11 @@ from train.utils import (
     set_seed,
     train_one_epoch,
 )
-from selfplay import generate_mixed_selfplay_data
+from selfplay import (
+    discover_iter_snapshots,
+    generate_mixed_selfplay_vs_opponent_pool,
+    snapshot_iter_sort_key,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -56,7 +61,34 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--temperature-drop-move", type=int, default=20)
     parser.add_argument("--dirichlet-alpha", type=float, default=0.15)
     parser.add_argument("--dirichlet-epsilon", type=float, default=0.25)
-    parser.add_argument("--selfplay-vs-best-ratio", type=float, default=0.2)
+    parser.add_argument(
+        "--selfplay-vs-old-ratio",
+        type=float,
+        default=0.2,
+        help=(
+            "Fraction of games vs a random foe from {current best + iter_* snapshot weights}."
+        ),
+    )
+    parser.add_argument(
+        "--selfplay-vs-best-ratio",
+        type=float,
+        default=None,
+        help="Deprecated: use --selfplay-vs-old-ratio (same semantics).",
+    )
+    parser.add_argument(
+        "--snapshot-every",
+        type=int,
+        default=20,
+        help=(
+            "If >0, every N global_iterations save checkpoints/<snapshot-dir>/iter_GGGGG_model.pt."
+        ),
+    )
+    parser.add_argument(
+        "--snapshot-dir",
+        type=str,
+        default="checkpoints/snapshots",
+        help="Directory for iter_<global_iteration>_model.pt periodic snapshots.",
+    )
     parser.add_argument(
         "--replay-path", type=str, default="logs/replay_buffer_latest.npz"
     )
@@ -78,9 +110,38 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=0,
         help=(
-            "Per game, sample n uniformly from {0,...,k} then n random alternating legal "
+            "Per game, sample n uniformly from {0,...,k}; opener phase runs n alternating "
             "opening moves (Black first: Black (n+1)//2, White n//2). Not in replay. k<=0 disables."
         ),
+    )
+    parser.add_argument(
+        "--opening-policy",
+        type=str,
+        choices=("uniform", "mcts"),
+        default="uniform",
+        help=(
+            "How opener moves are chosen when opening-random-moves>0: "
+            "uniform=random legal; mcts=visit-softmax (--selfplay-temperature) "
+            "with same Dirichlet as training MCTS."
+        ),
+    )
+    parser.add_argument(
+        "--opening-simulations",
+        type=int,
+        default=0,
+        help="MCTS simulations per opener move when opening-policy=mcts; 0 or negative uses --simulations.",
+    )
+    parser.add_argument(
+        "--disable-tactical-forced-moves",
+        action="store_true",
+        help=(
+            "If set, disable one-move win/block before MCTS (fully learned search+ablation)."
+        ),
+    )
+    parser.add_argument(
+        "--amp",
+        action="store_true",
+        help="Enable automatic mixed precision (AMP) for faster GPU training.",
     )
     return parser.parse_args()
 
@@ -105,6 +166,14 @@ def main() -> None:
     args = parse_args()
     cfg = load_config(args.config)
     set_seed(args.seed)
+
+    mix_ratio = (
+        args.selfplay_vs_best_ratio
+        if args.selfplay_vs_best_ratio is not None
+        else args.selfplay_vs_old_ratio
+    )
+
+    tactical_fm = not args.disable_tactical_forced_moves
 
     board_size = int(cfg["board_size"])
     replay_buffer_size = int(cfg["replay_buffer_size"])
@@ -153,6 +222,15 @@ def main() -> None:
         replay_birth_iters.extend(loaded_birth_iters)
     global_iter_base = max(replay_birth_iters) if replay_birth_iters else 0
 
+    snapshot_dir = Path(args.snapshot_dir)
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+    snapshot_paths: list[Path] = discover_iter_snapshots(snapshot_dir)
+    opponent_reload = GomokuNet(
+        board_size=board_size,
+        channels=args.channels,
+        num_res_blocks=args.res_blocks,
+    ).to(device)
+
     print("Continuous training start")
     print(
         f"from latest={latest_path} exists={loaded_latest}, "
@@ -174,14 +252,30 @@ def main() -> None:
         f"dirichlet_epsilon={args.dirichlet_epsilon}"
     )
     print(
-        f"training mix: vs_best_ratio={args.selfplay_vs_best_ratio}, "
-        f"replay_decay={args.replay_decay}"
+        "training mix: "
+        f"vs_old_ratio={mix_ratio} (mixed opponent ~ U(best + snapshots)), "
+        f"snapshots_in_pool={len(snapshot_paths)}, snapshot_every={args.snapshot_every}, "
+        f"snapshot_dir={snapshot_dir}"
     )
+    print(f"replay_decay={args.replay_decay}")
+    if args.disable_tactical_forced_moves:
+        print("MCTS one-move win/block shortcut DISABLED (--disable-tactical-forced-moves)")
     if args.opening_random_moves > 0:
-        print(
-            f"self-play random opening: max_k={args.opening_random_moves} "
-            f"(each game n~U{{0..k}} then n random moves; excluded from training rows; arena unchanged)"
-        )
+        if args.opening_policy == "uniform":
+            print(
+                f"self-play random opening (uniform): max_k={args.opening_random_moves} "
+                f"(each game n~U{{0..k}} then uniform legal moves; excluded from training rows)"
+            )
+        else:
+            op_s = (
+                args.simulations
+                if args.opening_simulations <= 0
+                else args.opening_simulations
+            )
+            print(
+                f"self-play MCTS opening: max_k={args.opening_random_moves}, "
+                f"opening_sims/step={op_s}, temperature=selfplay temp; excluded from rows; arena unchanged"
+            )
 
     interrupted = False
     try:
@@ -210,7 +304,9 @@ def main() -> None:
                     f"elapsed={elapsed:.1f}s"
                 )
 
-            mixed_games = int(args.games_per_iter * max(0.0, min(1.0, args.selfplay_vs_best_ratio)))
+            mixed_games = int(
+                args.games_per_iter * max(0.0, min(1.0, mix_ratio))
+            )
             self_games = max(0, args.games_per_iter - mixed_games)
             new_samples: list[Sample] = []
             if self_games > 0:
@@ -231,6 +327,9 @@ def main() -> None:
                     mcts_infer_batch_size=args.mcts_infer_batch_size,
                     mcts_virtual_loss_weight=args.mcts_virtual_loss_weight,
                     opening_random_moves=args.opening_random_moves,
+                    opening_policy=args.opening_policy,
+                    opening_simulations=args.opening_simulations,
+                    tactical_forced_moves=tactical_fm,
                 )
                 new_samples.extend(self_samples)
             if mixed_games > 0:
@@ -242,9 +341,12 @@ def main() -> None:
                     if on_game_end is not None:
                         on_game_end(mixed_offset + game_idx, sample_count, result, steps)
 
-                mixed_samples = generate_mixed_selfplay_data(
+                opponent_pool: list[Literal["best"] | Path] = ["best"] + snapshot_paths
+                mixed_samples = generate_mixed_selfplay_vs_opponent_pool(
                     latest_model=latest_model,
                     best_model=best_model,
+                    opponent_reload=opponent_reload,
+                    opponent_pool=opponent_pool,
                     num_games=mixed_games,
                     board_size=board_size,
                     simulations=args.simulations,
@@ -258,6 +360,9 @@ def main() -> None:
                     mcts_infer_batch_size=args.mcts_infer_batch_size,
                     mcts_virtual_loss_weight=args.mcts_virtual_loss_weight,
                     opening_random_moves=args.opening_random_moves,
+                    opening_policy=args.opening_policy,
+                    opening_simulations=args.opening_simulations,
+                    tactical_forced_moves=tactical_fm,
                 )
                 new_samples.extend(mixed_samples)
             replay.extend(new_samples)
@@ -281,6 +386,7 @@ def main() -> None:
                     batch_size=args.batch_size,
                     sample_weights=decay_weights,
                     board_size=board_size,
+                    use_amp=args.amp,
                 )
                 print(f"[Iter {it}] epoch {epoch}/{args.epochs} loss={loss:.4f}")
 
@@ -302,12 +408,23 @@ def main() -> None:
                 else None,
                 mcts_infer_batch_size=args.mcts_infer_batch_size,
                 mcts_virtual_loss_weight=args.mcts_virtual_loss_weight,
+                tactical_forced_moves=tactical_fm,
             )
             promoted = arena.candidate_win_rate >= promote_threshold
             if promoted:
                 best_model.load_state_dict(deepcopy(latest_model.state_dict()))
                 best_path.parent.mkdir(parents=True, exist_ok=True)
                 torch.save(best_model.state_dict(), best_path)
+
+            if args.snapshot_every > 0 and global_it % args.snapshot_every == 0:
+                snap_name = f"iter_{global_it:05d}_model.pt"
+                snap_path = snapshot_dir / snap_name
+                torch.save(latest_model.state_dict(), snap_path)
+                have = {p.resolve() for p in snapshot_paths}
+                if snap_path.resolve() not in have:
+                    snapshot_paths.append(snap_path)
+                    snapshot_paths.sort(key=lambda q: snapshot_iter_sort_key(q) or 0)
+                print(f"[Iter {it}] periodic snapshot saved: {snap_path}")
 
             elapsed = time.time() - iter_start
             log_item = {

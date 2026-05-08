@@ -17,13 +17,12 @@ def test_board_to_tensor_shape_and_planes() -> None:
     board.place_stone(7, 8)  # White, now black to move
 
     x = board_to_tensor(board)
-    assert x.shape == (3, 15, 15)
+    assert x.shape == (2, 15, 15)
     assert x.dtype == torch.float32
 
     # Current player is BLACK.
     assert x[0, 7, 7].item() == 1.0
     assert x[1, 7, 8].item() == 1.0
-    assert torch.all(x[2] == 1.0)
 
 
 def test_legal_moves_mask() -> None:
@@ -38,7 +37,7 @@ def test_legal_moves_mask() -> None:
 
 def test_gomokunet_forward_shapes_and_value_range() -> None:
     model = GomokuNet(board_size=15, channels=32, num_res_blocks=2)
-    x = torch.randn(4, 3, 15, 15)
+    x = torch.randn(4, 2, 15, 15)
     policy_logits, value = model(x)
     assert policy_logits.shape == (4, 225)
     assert value.shape == (4, 1)

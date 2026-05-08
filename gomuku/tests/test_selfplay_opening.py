@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from model.network import GomokuNet
 from selfplay.generate import _random_opening_num_moves, play_self_game
@@ -55,3 +56,28 @@ def test_random_open_then_mcts_occasionally_empty_board_start() -> None:
             saw_empty_first = True
             break
     assert saw_empty_first
+
+
+def test_mcts_opening_deterministic_n_has_stones_before_first_training_move(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "selfplay.generate._random_opening_num_moves",
+        lambda _max_moves: 2,
+    )
+    set_seed(900)
+    model = GomokuNet(board_size=9, channels=8, num_res_blocks=1)
+    data, _, steps = play_self_game(
+        model=model,
+        board_size=9,
+        simulations=4,
+        c_puct=1.5,
+        device="cpu",
+        opening_random_moves=12,
+        opening_policy="mcts",
+        opening_simulations=8,
+        mcts_infer_batch_size=1,
+    )
+    assert steps > 0
+    stones = np.count_nonzero(data[0][0][0]) + np.count_nonzero(data[0][0][1])
+    assert stones == 2

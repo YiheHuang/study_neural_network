@@ -25,6 +25,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--channels", type=int, default=64)
     parser.add_argument("--res-blocks", type=int, default=6)
     parser.add_argument("--mcts-infer-batch-size", type=int, default=8)
+    parser.add_argument(
+        "--disable-tactical-forced-moves",
+        action="store_true",
+        help="Disable MCTS one-move win/block shortcut.",
+    )
     return parser.parse_args()
 
 
@@ -43,7 +48,11 @@ class GomokuGUI:
             num_res_blocks=args.res_blocks,
         )
         self._try_load_model(args.model_path)
-        self.mcts = MCTS(self.model, c_puct=1.5)
+        self.mcts = MCTS(
+            self.model,
+            c_puct=1.5,
+            tactical_forced_moves=not args.disable_tactical_forced_moves,
+        )
 
         self.margin = 24
         self.cell = args.cell_size

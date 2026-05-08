@@ -6,7 +6,7 @@ import numpy as np
 import torch
 from torch import nn
 
-from env.board import Board, Player
+from env.board import Board
 
 
 def board_to_tensor(board: Board) -> torch.Tensor:
@@ -16,9 +16,8 @@ def board_to_tensor(board: Board) -> torch.Tensor:
 
     current_plane = (board.grid == current).astype(np.float32)
     opponent_plane = (board.grid == opponent).astype(np.float32)
-    turn_plane = np.full((size, size), 1.0 if board.current_player == Player.BLACK else 0.0)
 
-    stacked = np.stack([current_plane, opponent_plane, turn_plane], axis=0)
+    stacked = np.stack([current_plane, opponent_plane], axis=0)
     return torch.from_numpy(stacked).float()
 
 

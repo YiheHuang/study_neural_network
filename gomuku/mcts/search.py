@@ -8,6 +8,7 @@ import numpy as np
 import torch
 
 from env.board import Board, GameResult
+from env.tactics import tactical_priority_move
 from model.predict import predict_policy_value, predict_policy_value_batch
 
 
@@ -32,9 +33,15 @@ class MCTSNode:
 
 
 class MCTS:
-    def __init__(self, model: torch.nn.Module, c_puct: float = 1.5) -> None:
+    def __init__(
+        self,
+        model: torch.nn.Module,
+        c_puct: float = 1.5,
+        tactical_forced_moves: bool = True,
+    ) -> None:
         self.model = model
         self.c_puct = c_puct
+        self.tactical_forced_moves = tactical_forced_moves
 
     def run(
         self,
@@ -48,6 +55,16 @@ class MCTS:
         infer_batch_size: int = 1,
         virtual_loss_weight: float = 1.0,
     ) -> Tuple[Tuple[int, int], np.ndarray]:
+        if self.tactical_forced_moves:
+            forced = tactical_priority_move(root_board)
+        else:
+            forced = None
+        if forced is not None:
+            sz = root_board.size
+            policy = np.zeros(sz * sz, dtype=np.float32)
+            policy[_move_to_index(sz, forced)] = 1.0
+            return forced, policy
+
         infer_batch_size = max(1, int(infer_batch_size))
         root = MCTSNode(board=root_board.copy(), prior=1.0)
         self._expand(root, device=device)

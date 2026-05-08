@@ -53,6 +53,7 @@ def _arena_worker_one_game(
     c_puct: float,
     mcts_infer_batch_size: int,
     mcts_virtual_loss_weight: float,
+    tactical_forced_moves: bool,
 ) -> Tuple[int, int]:
     """Returns (int(GameResult), 1 if candidate is black else 0)."""
     if _ARENA_CAND is None or _ARENA_BEST is None or _ARENA_DEVICE is None:
@@ -68,6 +69,7 @@ def _arena_worker_one_game(
         candidate_as_black=candidate_as_black,
         mcts_infer_batch_size=mcts_infer_batch_size,
         mcts_virtual_loss_weight=mcts_virtual_loss_weight,
+        tactical_forced_moves=tactical_forced_moves,
     )
     return int(res), 1 if candidate_as_black else 0
 
@@ -105,11 +107,16 @@ def _play_one_game(
     candidate_as_black: bool,
     mcts_infer_batch_size: int = 1,
     mcts_virtual_loss_weight: float = 1.0,
+    tactical_forced_moves: bool = True,
 ) -> GameResult:
     board = Board(size=board_size)
     candidate_player = Player.BLACK if candidate_as_black else Player.WHITE
-    candidate_search = MCTS(model=candidate_model, c_puct=c_puct)
-    best_search = MCTS(model=best_model, c_puct=c_puct)
+    candidate_search = MCTS(
+        model=candidate_model, c_puct=c_puct, tactical_forced_moves=tactical_forced_moves
+    )
+    best_search = MCTS(
+        model=best_model, c_puct=c_puct, tactical_forced_moves=tactical_forced_moves
+    )
 
     while board.game_result() == GameResult.ONGOING:
         if board.current_player == candidate_player:
@@ -168,6 +175,7 @@ def evaluate_models(
     worker_device: str | torch.device | None = None,
     mcts_infer_batch_size: int = 1,
     mcts_virtual_loss_weight: float = 1.0,
+    tactical_forced_moves: bool = True,
 ) -> ArenaResult:
     result = ArenaResult(candidate_wins=0, best_wins=0, draws=0, games=games)
     if games <= 0:
@@ -186,6 +194,7 @@ def evaluate_models(
                 candidate_as_black=candidate_as_black,
                 mcts_infer_batch_size=mcts_infer_batch_size,
                 mcts_virtual_loss_weight=mcts_virtual_loss_weight,
+                tactical_forced_moves=tactical_forced_moves,
             )
             _accumulate_game_result(result, game_result, candidate_as_black)
         return result
@@ -222,6 +231,7 @@ def evaluate_models(
                 c_puct,
                 mcts_infer_batch_size,
                 mcts_virtual_loss_weight,
+                tactical_forced_moves,
             ): i
             for i in range(games)
         }

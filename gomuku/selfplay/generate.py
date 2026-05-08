@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import re
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Tuple
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Literal, Sequence, Tuple, Union
 
 import numpy as np
 import torch
@@ -11,6 +13,8 @@ from env.board import Board, GameResult, Player
 from mcts import MCTS
 from model.network import GomokuNet
 from model.predict import board_to_tensor
+
+OpeningPolicy = Literal["uniform", "mcts"]
 
 
 @dataclass
@@ -58,6 +62,93 @@ def _random_opening_num_moves(max_moves: int) -> int:
     return int(np.random.randint(max_moves + 1))
 
 
+def _effective_opening_simulations(opening_simulations: int, main_simulations: int) -> int:
+    return main_simulations if opening_simulations <= 0 else opening_simulations
+
+
+def _apply_mcts_opening_one_model(
+    board: Board,
+    model: torch.nn.Module,
+    *,
+    num_moves: int,
+    simulations: int,
+    c_puct: float,
+    device: str | torch.device,
+    temperature: float,
+    dirichlet_alpha: float,
+    dirichlet_epsilon: float,
+    mcts_infer_batch_size: int,
+    mcts_virtual_loss_weight: float,
+    tactical_forced_moves: bool,
+) -> None:
+    """Alternating MCTS opening on one net; produces no training rows."""
+    if num_moves <= 0:
+        return
+    search = MCTS(
+        model=model, c_puct=c_puct, tactical_forced_moves=tactical_forced_moves
+    )
+    for _ in range(num_moves):
+        if board.game_result() != GameResult.ONGOING:
+            return
+        move, _ = search.run(
+            board,
+            simulations=simulations,
+            device=device,
+            temperature=temperature,
+            add_dirichlet_noise=True,
+            dirichlet_alpha=dirichlet_alpha,
+            dirichlet_epsilon=dirichlet_epsilon,
+            infer_batch_size=mcts_infer_batch_size,
+            virtual_loss_weight=mcts_virtual_loss_weight,
+        )
+        board.place_stone(*move)
+
+
+def _apply_mcts_opening_two_models(
+    board: Board,
+    black_model: torch.nn.Module,
+    white_model: torch.nn.Module,
+    *,
+    num_moves: int,
+    simulations: int,
+    c_puct: float,
+    device: str | torch.device,
+    temperature: float,
+    dirichlet_alpha: float,
+    dirichlet_epsilon: float,
+    mcts_infer_batch_size: int,
+    mcts_virtual_loss_weight: float,
+    tactical_forced_moves: bool,
+) -> None:
+    """Alternating MCTS opening with the mover's network each step; no training rows."""
+    if num_moves <= 0:
+        return
+    black_search = MCTS(
+        model=black_model, c_puct=c_puct, tactical_forced_moves=tactical_forced_moves
+    )
+    white_search = MCTS(
+        model=white_model, c_puct=c_puct, tactical_forced_moves=tactical_forced_moves
+    )
+    for _ in range(num_moves):
+        if board.game_result() != GameResult.ONGOING:
+            return
+        search = (
+            black_search if board.current_player == Player.BLACK else white_search
+        )
+        move, _ = search.run(
+            board,
+            simulations=simulations,
+            device=device,
+            temperature=temperature,
+            add_dirichlet_noise=True,
+            dirichlet_alpha=dirichlet_alpha,
+            dirichlet_epsilon=dirichlet_epsilon,
+            infer_batch_size=mcts_infer_batch_size,
+            virtual_loss_weight=mcts_virtual_loss_weight,
+        )
+        board.place_stone(*move)
+
+
 def play_self_game(
     model: torch.nn.Module,
     board_size: int,
@@ -71,14 +162,42 @@ def play_self_game(
     mcts_infer_batch_size: int = 1,
     mcts_virtual_loss_weight: float = 1.0,
     opening_random_moves: int = 0,
+    opening_policy: OpeningPolicy = "uniform",
+    opening_simulations: int = 0,
+    tactical_forced_moves: bool = True,
 ) -> Tuple[List[Tuple[np.ndarray, np.ndarray, float]], GameResult, int]:
     """
-    opening_random_moves: k; each episode samples n ~ Uniform({0,…,k}); n alternating random moves
-    (Black first ⇒ Black (n+1)//2, White n//2). Not in replay.
+    opening_random_moves: k; each episode samples n ~ Uniform({0,…,k}); opener phase is n
+    alternating moves (Black first). Not in replay.
+
+    opening_policy uniform: uniformly random legal move each opener step.
+
+    opening_policy mcts: each opener step runs MCTS (visit-softmax & temperature=temperature).
+    opening_simulations: MCTS sims per opener step; values <=0 use `simulations`.
     """
     board = Board(size=board_size)
-    _apply_random_opening(board, _random_opening_num_moves(opening_random_moves))
-    mcts = MCTS(model=model, c_puct=c_puct)
+    n_open = _random_opening_num_moves(opening_random_moves)
+    if opening_policy == "uniform":
+        _apply_random_opening(board, n_open)
+    else:
+        op_sims = _effective_opening_simulations(opening_simulations, simulations)
+        _apply_mcts_opening_one_model(
+            board,
+            model,
+            num_moves=n_open,
+            simulations=op_sims,
+            c_puct=c_puct,
+            device=device,
+            temperature=temperature,
+            dirichlet_alpha=dirichlet_alpha,
+            dirichlet_epsilon=dirichlet_epsilon,
+            mcts_infer_batch_size=mcts_infer_batch_size,
+            mcts_virtual_loss_weight=mcts_virtual_loss_weight,
+            tactical_forced_moves=tactical_forced_moves,
+        )
+    mcts = MCTS(
+        model=model, c_puct=c_puct, tactical_forced_moves=tactical_forced_moves
+    )
     history: List[Sample] = []
 
     while board.game_result() == GameResult.ONGOING:
@@ -147,6 +266,9 @@ def _play_self_game_worker(
     mcts_infer_batch_size: int,
     mcts_virtual_loss_weight: float,
     opening_random_moves: int,
+    opening_policy: OpeningPolicy,
+    opening_simulations: int,
+    tactical_forced_moves: bool,
 ) -> Dict[str, Any]:
     if _WORKER_MODEL is None or _WORKER_DEVICE is None:
         raise RuntimeError("Worker model not initialized.")
@@ -163,6 +285,9 @@ def _play_self_game_worker(
         mcts_infer_batch_size=mcts_infer_batch_size,
         mcts_virtual_loss_weight=mcts_virtual_loss_weight,
         opening_random_moves=opening_random_moves,
+        opening_policy=opening_policy,
+        opening_simulations=opening_simulations,
+        tactical_forced_moves=tactical_forced_moves,
     )
     return {
         "game_id": game_id,
@@ -189,6 +314,9 @@ def generate_selfplay_data(
     mcts_infer_batch_size: int = 1,
     mcts_virtual_loss_weight: float = 1.0,
     opening_random_moves: int = 0,
+    opening_policy: OpeningPolicy = "uniform",
+    opening_simulations: int = 0,
+    tactical_forced_moves: bool = True,
 ) -> List[Tuple[np.ndarray, np.ndarray, float]]:
     dataset: List[Tuple[np.ndarray, np.ndarray, float]] = []
     if num_workers <= 1:
@@ -206,6 +334,9 @@ def generate_selfplay_data(
                 mcts_infer_batch_size=mcts_infer_batch_size,
                 mcts_virtual_loss_weight=mcts_virtual_loss_weight,
                 opening_random_moves=opening_random_moves,
+                opening_policy=opening_policy,
+                opening_simulations=opening_simulations,
+                tactical_forced_moves=tactical_forced_moves,
             )
             dataset.extend(game_data)
             if on_game_end is not None:
@@ -242,6 +373,9 @@ def generate_selfplay_data(
                 mcts_infer_batch_size,
                 mcts_virtual_loss_weight,
                 opening_random_moves,
+                opening_policy,
+                opening_simulations,
+                tactical_forced_moves,
             ): game_id
             for game_id in range(num_games)
         }
@@ -273,11 +407,37 @@ def play_match_game(
     mcts_infer_batch_size: int = 1,
     mcts_virtual_loss_weight: float = 1.0,
     opening_random_moves: int = 0,
+    opening_policy: OpeningPolicy = "uniform",
+    opening_simulations: int = 0,
+    tactical_forced_moves: bool = True,
 ) -> Tuple[List[Tuple[np.ndarray, np.ndarray, float]], GameResult, int]:
     board = Board(size=board_size)
-    _apply_random_opening(board, _random_opening_num_moves(opening_random_moves))
-    black_search = MCTS(model=black_model, c_puct=c_puct)
-    white_search = MCTS(model=white_model, c_puct=c_puct)
+    n_open = _random_opening_num_moves(opening_random_moves)
+    if opening_policy == "uniform":
+        _apply_random_opening(board, n_open)
+    else:
+        op_sims = _effective_opening_simulations(opening_simulations, simulations)
+        _apply_mcts_opening_two_models(
+            board,
+            black_model,
+            white_model,
+            num_moves=n_open,
+            simulations=op_sims,
+            c_puct=c_puct,
+            device=device,
+            temperature=temperature,
+            dirichlet_alpha=dirichlet_alpha,
+            dirichlet_epsilon=dirichlet_epsilon,
+            mcts_infer_batch_size=mcts_infer_batch_size,
+            mcts_virtual_loss_weight=mcts_virtual_loss_weight,
+            tactical_forced_moves=tactical_forced_moves,
+        )
+    black_search = MCTS(
+        model=black_model, c_puct=c_puct, tactical_forced_moves=tactical_forced_moves
+    )
+    white_search = MCTS(
+        model=white_model, c_puct=c_puct, tactical_forced_moves=tactical_forced_moves
+    )
     history: List[Sample] = []
 
     while board.game_result() == GameResult.ONGOING:
@@ -312,6 +472,102 @@ def play_match_game(
     return data, board.game_result(), len(history)
 
 
+def snapshot_iter_sort_key(path: Path) -> int | None:
+    matched = re.match(r"iter_(\d+)_model\.pt$", path.name)
+    if not matched:
+        return None
+    return int(matched.group(1))
+
+
+def discover_iter_snapshots(snapshot_dir: Path) -> List[Path]:
+    paths: List[Path] = []
+    for cand in snapshot_dir.glob("iter_*_model.pt"):
+        if snapshot_iter_sort_key(cand) is None:
+            continue
+        paths.append(cand)
+    return sorted(paths, key=lambda q: snapshot_iter_sort_key(q) or 0)
+
+
+def _checkpoint_state_dict(path: Path, map_location: str | torch.device) -> Dict[str, torch.Tensor]:
+    blob = torch.load(str(path), map_location=map_location)
+    if isinstance(blob, dict) and "model_state_dict" in blob:
+        blob = blob["model_state_dict"]
+    if not isinstance(blob, dict):
+        raise RuntimeError(f"Unsupported checkpoint: {path}")
+    return blob  # type: ignore[return-value]
+
+
+def generate_mixed_selfplay_vs_opponent_pool(
+    latest_model: torch.nn.Module,
+    best_model: torch.nn.Module,
+    opponent_reload: torch.nn.Module,
+    opponent_pool: Sequence[Literal["best"] | Path],
+    num_games: int,
+    board_size: int,
+    simulations: int,
+    c_puct: float,
+    device: str | torch.device = "cpu",
+    on_game_end: Callable[[int, int, GameResult, int], None] | None = None,
+    temperature: float = 1.0,
+    temperature_drop_move: int = 20,
+    dirichlet_alpha: float = 0.3,
+    dirichlet_epsilon: float = 0.25,
+    mcts_infer_batch_size: int = 1,
+    mcts_virtual_loss_weight: float = 1.0,
+    opening_random_moves: int = 0,
+    opening_policy: OpeningPolicy = "uniform",
+    opening_simulations: int = 0,
+    tactical_forced_moves: bool = True,
+) -> List[Tuple[np.ndarray, np.ndarray, float]]:
+    """
+    latest vs foe; foe each game uniformly from pool ("best" or snapshot .pt paths).
+    Snapshots load into opponent_reload between games.
+    """
+    pool: List[Union[Literal["best"], Path]] = list(opponent_pool) if opponent_pool else ["best"]
+    map_loc = (
+        device
+        if isinstance(device, (str, torch.device))
+        else "cpu"
+    )
+    dataset: List[Tuple[np.ndarray, np.ndarray, float]] = []
+    for game_idx in range(num_games):
+        pick = pool[int(np.random.randint(len(pool)))]
+        if pick == "best":
+            foe = best_model
+        else:
+            path = Path(pick)
+            opponent_reload.load_state_dict(
+                _checkpoint_state_dict(path, map_location=map_loc)
+            )
+            foe = opponent_reload
+
+        latest_as_black = (game_idx % 2) == 0
+        black_model = latest_model if latest_as_black else foe
+        white_model = foe if latest_as_black else latest_model
+        game_data, game_result, steps = play_match_game(
+            black_model=black_model,
+            white_model=white_model,
+            board_size=board_size,
+            simulations=simulations,
+            c_puct=c_puct,
+            device=device,
+            temperature=temperature,
+            temperature_drop_move=temperature_drop_move,
+            dirichlet_alpha=dirichlet_alpha,
+            dirichlet_epsilon=dirichlet_epsilon,
+            mcts_infer_batch_size=mcts_infer_batch_size,
+            mcts_virtual_loss_weight=mcts_virtual_loss_weight,
+            opening_random_moves=opening_random_moves,
+            opening_policy=opening_policy,
+            opening_simulations=opening_simulations,
+            tactical_forced_moves=tactical_forced_moves,
+        )
+        dataset.extend(game_data)
+        if on_game_end is not None:
+            on_game_end(game_idx + 1, len(game_data), game_result, steps)
+    return dataset
+
+
 def generate_mixed_selfplay_data(
     latest_model: torch.nn.Module,
     best_model: torch.nn.Module,
@@ -328,6 +584,9 @@ def generate_mixed_selfplay_data(
     mcts_infer_batch_size: int = 1,
     mcts_virtual_loss_weight: float = 1.0,
     opening_random_moves: int = 0,
+    opening_policy: OpeningPolicy = "uniform",
+    opening_simulations: int = 0,
+    tactical_forced_moves: bool = True,
 ) -> List[Tuple[np.ndarray, np.ndarray, float]]:
     dataset: List[Tuple[np.ndarray, np.ndarray, float]] = []
     for game_idx in range(num_games):
@@ -348,6 +607,9 @@ def generate_mixed_selfplay_data(
             mcts_infer_batch_size=mcts_infer_batch_size,
             mcts_virtual_loss_weight=mcts_virtual_loss_weight,
             opening_random_moves=opening_random_moves,
+            opening_policy=opening_policy,
+            opening_simulations=opening_simulations,
+            tactical_forced_moves=tactical_forced_moves,
         )
         dataset.extend(game_data)
         if on_game_end is not None:

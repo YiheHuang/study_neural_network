@@ -26,6 +26,11 @@ def parse_args() -> argparse.Namespace:
         default=8,
         help="MCTS NN batch size (1=fully sequential evaluation).",
     )
+    parser.add_argument(
+        "--disable-tactical-forced-moves",
+        action="store_true",
+        help="Disable one-move win/block before MCTS (ablation vs default).",
+    )
     return parser.parse_args()
 
 
@@ -68,7 +73,11 @@ def main() -> None:
     device = resolve_device(args.device)
 
     model = _load_model(args)
-    mcts = MCTS(model=model, c_puct=1.5)
+    mcts = MCTS(
+        model=model,
+        c_puct=1.5,
+        tactical_forced_moves=not args.disable_tactical_forced_moves,
+    )
 
     print("Game start. Coordinates are zero-based.")
     print(f"Human: {human_player.name}, AI: {ai_player.name}\n")

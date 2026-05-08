@@ -14,6 +14,6 @@ def test_generate_selfplay_data_not_empty() -> None:
     )
     assert len(data) > 0
     state, policy, value = data[0]
-    assert state.shape == (3, 15, 15)
+    assert state.shape == (2, 15, 15)
     assert policy.shape == (225,)
     assert -1.0 <= value <= 1.0

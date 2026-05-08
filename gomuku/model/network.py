@@ -29,14 +29,14 @@ class ResidualBlock(nn.Module):
 
 class GomokuNet(nn.Module):
     """
-    Input:  (B, 3, board_size, board_size)
+    Input:  (B, in_channels, board_size, board_size)
     Output: policy_logits (B, board_size * board_size), value (B, 1)
     """
 
     def __init__(
         self,
         board_size: int = 9,
-        in_channels: int = 3,
+        in_channels: int = 2,
         channels: int = 64,
         num_res_blocks: int = 6,
     ) -> None:
@@ -54,21 +54,23 @@ class GomokuNet(nn.Module):
         )
 
         self.policy_head = nn.Sequential(
-            nn.Conv2d(channels, 2, kernel_size=1, bias=False),
-            nn.BatchNorm2d(2),
+            nn.Conv2d(channels, 32, kernel_size=1, bias=False),
+            nn.BatchNorm2d(32),
             nn.ReLU(inplace=True),
+            nn.Conv2d(32, 1, kernel_size=1, bias=False),
         )
-        self.policy_fc = nn.Linear(2 * board_size * board_size, self.policy_dim)
 
-        self.value_head = nn.Sequential(
-            nn.Conv2d(channels, 1, kernel_size=1, bias=False),
-            nn.BatchNorm2d(1),
+        self.value_conv = nn.Sequential(
+            nn.Conv2d(channels, 32, kernel_size=1, bias=False),
+            nn.BatchNorm2d(32),
             nn.ReLU(inplace=True),
         )
-        self.value_fc1 = nn.Linear(board_size * board_size, 128)
-        self.value_fc2 = nn.Linear(128, 1)
-        self.value_relu = nn.ReLU(inplace=True)
-        self.value_tanh = nn.Tanh()
+        self.value_fc = nn.Sequential(
+            nn.Linear(32 * board_size * board_size, 128),
+            nn.ReLU(inplace=True),
+            nn.Linear(128, 1),
+            nn.Tanh(),
+        )
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         if x.ndim != 4:
@@ -77,13 +79,9 @@ class GomokuNet(nn.Module):
         features = self.backbone(features)
 
         policy = self.policy_head(features)
-        policy = policy.reshape(policy.shape[0], -1)
-        policy_logits = self.policy_fc(policy)
+        policy_logits = policy.reshape(policy.shape[0], -1)
 
-        value = self.value_head(features)
+        value = self.value_conv(features)
         value = value.reshape(value.shape[0], -1)
-        value = self.value_fc1(value)
-        value = self.value_relu(value)
-        value = self.value_fc2(value)
-        value = self.value_tanh(value)
+        value = self.value_fc(value)
         return policy_logits, value

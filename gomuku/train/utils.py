@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import json
 from collections import deque
 from pathlib import Path
@@ -85,17 +86,20 @@ def train_one_epoch(
     sample_weights: torch.Tensor | None = None,
     board_size: int = 9,
     augment: bool = True,
+    use_amp: bool = False,
 ) -> float:
     model.train()
     num_samples = states.shape[0]
+    device = states.device
+    scaler = torch.cuda.amp.GradScaler() if use_amp and device.type == "cuda" else None
     if sample_weights is not None:
         if sample_weights.shape[0] != num_samples:
             raise ValueError("sample_weights length must match num_samples")
-        weights = sample_weights.to(states.device)
+        weights = sample_weights.to(device)
         weights = torch.clamp(weights, min=1e-8)
         perm = torch.multinomial(weights, num_samples=num_samples, replacement=True)
     else:
-        perm = torch.randperm(num_samples, device=states.device)
+        perm = torch.randperm(num_samples, device=device)
     total_loss = 0.0
     total_batches = 0
 
@@ -108,15 +112,26 @@ def train_one_epoch(
         if augment:
             s, p = augment_batch(s, p, board_size)
 
-        logits, value_pred = model(s)
-        log_probs = F.log_softmax(logits, dim=1)
-        policy_loss = -(p * log_probs).sum(dim=1).mean()
-        value_loss = F.mse_loss(value_pred, v)
-        loss = policy_loss + value_loss
+        amp_ctx = (
+            torch.cuda.amp.autocast()
+            if scaler is not None
+            else contextlib.nullcontext()
+        )
+        with amp_ctx:
+            logits, value_pred = model(s)
+            log_probs = F.log_softmax(logits, dim=1)
+            policy_loss = -(p * log_probs).sum(dim=1).mean()
+            value_loss = F.mse_loss(value_pred, v)
+            loss = policy_loss + value_loss
 
         optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+        if scaler is not None:
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            loss.backward()
+            optimizer.step()
 
         total_loss += float(loss.item())
         total_batches += 1
@@ -154,7 +169,7 @@ def save_replay_buffer(path: Path, samples: Sequence[Sample], birth_iters: Seque
     if not samples:
         np.savez_compressed(
             path,
-            states=np.empty((0, 3, 1, 1), dtype=np.float32),
+            states=np.empty((0, 2, 1, 1), dtype=np.float32),
             policies=np.empty((0, 1), dtype=np.float32),
             values=np.empty((0,), dtype=np.float32),
             birth_iters=np.empty((0,), dtype=np.int32),

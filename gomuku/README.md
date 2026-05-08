@@ -5,8 +5,9 @@
 - 9x9 无禁手规则环境
 - 胜负/和棋判定
 - 神经网络（策略头 + 价值头）
-- MCTS 搜索落子
-- 命令行随机对弈演示
+- MCTS 搜索落子；在展开树之前若存在 **己方一步成五** 或 **对手一步成五必堵** 的落点，则**直接下该手**（不跑仿真），减少明显漏着；连续杀等仍依赖搜索与网络
+
+## 环境准备
 - 命令行人机对战（支持随机参数模型或加载权重）
 - 单元测试
 
@@ -72,13 +73,19 @@ python -m train.continuous --max-iters 20 --games-per-iter 64 --simulations 40 -
 python -m train.continuous --max-iters 20 --games-per-iter 64 --simulations 40 --selfplay-workers 8 --selfplay-worker-device cpu --selfplay-temperature 1.0 --temperature-drop-move 24 --dirichlet-alpha 0.3 --dirichlet-epsilon 0.25
 ```
 
-随机开局示例（缓和先手偏重：每盘 **n~U{0,…,k}** 再随机开局 n 步，再 MCTS；**人机与 arena 仍从空盘开始**）：
+随机开局示例（缓和先手偏重：每盘 **n~U{0,…,k}**；默认 **均匀随机** 开局 n 步后接 MCTS；**人机与 arena 仍空盘开局**）：
 
 ```bash
 python -m train.continuous --opening-random-moves 8 --max-iters 20 --games-per-iter 50 --simulations 40 --selfplay-workers 1 --device cuda
 ```
 
-要点：`--opening-random-moves k` 表示每盘先 **等概率抽 n∈{0,…,k}**，再交替 **均匀随机合法落子** n 步（黑先手 ⇒ 黑子数 **⌊(n+1)/2⌋**、白子数 **⌊n/2⌋**）。随机步 **不写回放**；`--temperature-drop-move` 仍以 **第一手 MCTS** 起算。仅 **自对弈 / mixed**；**人机与 arena 仍空盘**。极少数随机子已决出胜负时该局可无 MCTS 样本。
+与自对弈主阶段一致的 **MCTS visit softmax + `--selfplay-temperature`**（及 Dirichlet）开局示例：
+
+```bash
+python -m train.continuous --opening-random-moves 8 --opening-policy mcts --opening-simulations 16 ...
+```
+
+要点：`--opening-random-moves k`：每盘先 **等概率抽 n∈{0,…,k}**。`--opening-policy uniform`（默认）：交替 **均匀随机合法** n 步；`mcts`：交替 **各步跑一次 MCTS**（每步仿真次数由 **`--opening-simulations`** 控制，`≤0` 时用 **`--simulations`**），采样温度 **`--selfplay-temperature`**、根噪声 **`--dirichlet-*`** 与主对弈一致。开局步 **不写回放**；`--temperature-drop-move` 仍以 **第一手「训练」MCTS**（历史首条样本）起算。仅 **自对弈 / mixed**；人机与 arena 仍空盘。极少数开局已决胜负时该局可无训练样本。
 
 行为说明：
 
@@ -121,6 +128,7 @@ python -m app.gui --human white --simulations 120 --model-path checkpoints/best_
 - `--channels`（默认 `64`）：网络主干通道数。
 - `--res-blocks`（默认 `6`）：残差块数量。
 - `--mcts-infer-batch-size`（默认 `8`）：MCTS 叶节点 NN 批量推理尺寸；`1` 为逐步串行推理。
+- `--disable-tactical-forced-moves`：关闭 MCTS 前「一步必杀 / 一步必堵」短路（消融用；默认启用战术层）。
 
 ### `python -m app.gui`
 
@@ -133,6 +141,7 @@ python -m app.gui --human white --simulations 120 --model-path checkpoints/best_
 - `--channels`（默认 `64`）：网络主干通道数。
 - `--res-blocks`（默认 `6`）：残差块数量。
 - `--mcts-infer-batch-size`（默认 `8`）：同 `play_cli`；`1` 等价于严格串行 NN 评估。
+- `--disable-tactical-forced-moves`：同 `play_cli`。
 
 ### `python -m train.run`
 
@@ -154,7 +163,10 @@ python -m app.gui --human white --simulations 120 --model-path checkpoints/best_
 - `--dirichlet-epsilon`（默认 `0.25`）：根节点先验与噪声的混合比例。
 - `--mcts-infer-batch-size`（默认 `8`）：MCTS 叶节点 NN 批量推理大小；设为 `1` 即与「每扩展一次单次前向」同构（无批量 virtual loss）。
 - `--mcts-virtual-loss-weight`（默认 `1.0`）：批量 MCTS 的 virtual loss 强度。
-- `--opening-random-moves`（默认 `0`）：整数 **k**。每盘抽样 **n∼Uniform({0,…,k})**，再走 n 步随机开局（不写回放）；`k≤0` 关闭。
+- `--opening-random-moves`（默认 `0`）：整数 **k**。每盘抽样 **n∼Uniform({0,…,k})**，再走 **n** 步开局（见下条；不写回放）；`k≤0` 关闭。
+- `--opening-policy`（默认 `uniform`，可选 `uniform|mcts`）：`uniform` = 开局步均匀随机合法点；`mcts` = 每步等同训练 MCTS 的 visit-softmax + `--selfplay-temperature`，根 Dirichlet 同 `--dirichlet-alpha`/`--dirichlet-epsilon`。
+- `--opening-simulations`（默认 `0`）：`opening-policy=mcts` 时每步 MCTS 模拟次数；`≤0` 时使用 `--simulations`。
+- `--disable-tactical-forced-moves`：关闭自对弈 MCTS 的一步必胜/必堵短路（消融）。
 
 ### `python -m train.continuous`
 
@@ -180,16 +192,22 @@ python -m app.gui --human white --simulations 120 --model-path checkpoints/best_
 - `--temperature-drop-move`（默认 `20`）：前多少手使用温度采样；之后改为贪心落子。
 - `--dirichlet-alpha`（默认 `0.3`）：根节点 Dirichlet 噪声参数（探索强度）。
 - `--dirichlet-epsilon`（默认 `0.25`）：根节点先验与噪声的混合比例。
-- `--selfplay-vs-best-ratio`（默认 `0.2`）：训练采样时混入 `latest vs best` 对局占比（其余为 `latest vs latest`）。
+- `--selfplay-vs-old-ratio`（默认 `0.2`）：混入 **latest vs 随机老对手** 的局占比。对手在 **「当前 best」** 与 **`--snapshot-dir` 下所有 `iter_GGGGG_model.pt` 快照** 之间 **均匀随机**，每局重新抽一次（其余局为 `latest vs latest`）。
+- `--selfplay-vs-best-ratio`（已弃用）：若显式传入则 **覆盖** `--selfplay-vs-old-ratio` 数值，语义与 vs-old 相同。
+- `--snapshot-every`（默认 `20`）：按 **global_iteration**，每满 N 轮（且 `N>0`）在 `--snapshot-dir` 保存 `iter_<iteration>_model.pt`（当前 **`latest` 训练权重**）。设为 `0` 关闭周期快照（仍可用目录里已有快照进池）。
+- `--snapshot-dir`（默认 `checkpoints/snapshots`）：周期快照存放目录；启动时会 **扫描**其中符合 `iter_*_model.pt` 的文件加入对手池。
 - `--replay-path`（默认 `logs/replay_buffer_latest.npz`）：回放池持久化文件路径；启动会自动恢复并在训练中持续覆盖保存。
 - `--replay-decay`（默认 `0.03`）：训练采样衰减系数；越大越偏向最近数据。
 - `--mcts-infer-batch-size`（默认 `8`）：自对弈、mixed、`arena` 评估（`latest vs best`）中的 MCTS 批量推理尺寸。
 - `--mcts-virtual-loss-weight`（默认 `1.0`）：批量 MCTS 的 virtual loss 强度。
-- `--opening-random-moves`（默认 `0`）：**k**。每盘 **n∼U({0,…,k})** 后执行 n 步随机开局（**不写回放**）；**不包含**人机与 arena；`k≤0` 等价关闭。
+- `--opening-random-moves`（默认 `0`）：**k**。每盘 **n∼U({0,…,k})** 后执行 **n** 步开局（**不写回放**）；人机与 arena **不参与**；`k≤0` 等价关闭。
+- `--opening-policy`（默认 `uniform`）：开局步：`uniform`|`mcts`（见 train.run）。
+- `--opening-simulations`（默认 `0`）：见 train.run。
+- `--disable-tactical-forced-moves`：关闭自对弈、mixed、`arena` 中 MCTS 的一步必胜/必堵短路（消融）。
 
 ## 目录说明
 
-- `env/`: 棋盘状态与规则
+- `env/`: 棋盘状态与规则；`env/tactics.py` 为一步必胜/必堵检测（由 MCTS 调用）
 - `tests/`: 规则测试
 - `app/`: 命令行演示、命令行对战、GUI 对战入口
 - `model/`: 神经网络与推理接口
